@@ -19,6 +19,11 @@ reads round and a box keeps its edges. Plane has no stock logger.
 
 from __future__ import annotations
 
+# WHY empty (2026-11-25): this module registers its TypeViews on import; its functions are sample data and helpers,
+# not API. The public API is robot_msg_viz's own __all__ (show/save/stream/blueprint), and robot-sdk's scanner reads
+# __all__ to decide what a package publishes.
+__all__: list[str] = []
+
 import math
 
 import numpy as np

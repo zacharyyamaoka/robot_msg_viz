@@ -23,6 +23,11 @@ layout is in degrees too, so the two overlay) in each joint's colour from the Jo
 
 from __future__ import annotations
 
+# WHY empty (2026-11-25): this module registers its TypeViews on import; its functions are sample data and helpers,
+# not API. The public API is robot_msg_viz's own __all__ (show/save/stream/blueprint), and robot-sdk's scanner reads
+# __all__ to decide what a package publishes.
+__all__: list[str] = []
+
 from typing import Any
 
 import numpy as np
