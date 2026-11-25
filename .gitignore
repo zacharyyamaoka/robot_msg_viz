@@ -6,3 +6,4 @@ build/
 .pytest_cache/
 website/dist/
 reports/media/
+website/shots-run/
