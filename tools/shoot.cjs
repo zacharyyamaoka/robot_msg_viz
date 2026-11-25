@@ -55,11 +55,16 @@ const freePorts = async (n) => {
       args: ['--enable-webgl', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
     for (let k = 0; k < jobs.length; k += 1) {
       const job = jobs[k];
-      const page = await browser.newPage({ viewport: { width, height } });
+      // WHY dark by default: the gallery site follows the OS theme and reads dark first (robotmsgs.com), and Rerun's
+      // label backgrounds are low-contrast in the light theme (vision lane, 2026-11-24). SHOOT_THEME=light for light.
+      const page = await browser.newPage({ viewport: { width, height }, colorScheme: process.env.SHOOT_THEME || 'dark' });
       const errors = [];
-      page.on('console', (m) => { if (m.type() === 'error' || /^\s*ERROR|panic/.test(m.text())) errors.push(m.text().slice(0, 300)); });
+      // WHY skip api.github.com: the viewer checks GitHub for a newer release on load; a rate-limited 403 there says
+      // nothing about the recording (it flagged good stills BAD for every wave-1 lane, 2026-11-24).
+      const ours = (url) => !String(url || '').includes('api.github.com');
+      page.on('console', (m) => { if (!ours((m.location() || {}).url)) return; if (m.type() === 'error' || /^\s*ERROR|panic/.test(m.text())) errors.push(m.text().slice(0, 300)); });
       page.on('pageerror', (e) => errors.push('pageerror ' + String(e).slice(0, 300)));
-      page.on('response', (r) => { if (r.status() >= 400) errors.push(`HTTP ${r.status()} ${r.url().slice(0, 160)}`); });
+      page.on('response', (r) => { if (r.status() >= 400 && ours(r.url())) errors.push(`HTTP ${r.status()} ${r.url().slice(0, 160)}`); });
       const rrdUrl = `http://127.0.0.1:${files}/${k}/${encodeURIComponent(path.basename(job.rrd))}`;
       let result = { out: job.out, ok: false, playhead_s: null, panicked: null, errors };
       try {

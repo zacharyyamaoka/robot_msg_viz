@@ -1,0 +1,13 @@
+# robot-sdk declaration (docs/graph-schema.md in github.com/zacharyyamaoka/robot_sdk), checked by its
+# `python -m tools.sdk_graph check`. The public API takes any robot_msgs message (typed Any), so no single
+# type is a declared contract; the gallery (robot_msg_viz.catalog()) lists which types have a stock view.
+schema = "robot-sdk-declaration/1"
+role = "viewer"
+layer = "viewers"
+one_line = "A stock Rerun viewer for every robot_msgs type: show, save or stream, each with a preconfigured blueprint"
+summary = "One curated Rerun view per robot_msgs type (blueprint, sample data, screenshot) on top of robot_msgs' own logger: `viz.show(msg)`, `viz.save(path, msg)`, `with viz.stream(\"arm\") as live: live.log(msg)`, `viz.blueprint(...)` for your own recording. The landing page lists every type (supported ones clickable) and every use-case dashboard plugins add, each with Open in browser / Open on desktop."
+use_when = "Looking at any robot_msgs message in Rerun, live or from a file. **Never hand-write a Rerun layout for a standard type; grow its view here.**"
+
+[links]
+github = "https://github.com/zacharyyamaoka/robot_msg_viz"
+pypi = "https://pypi.org/project/robot-msg-viz/"

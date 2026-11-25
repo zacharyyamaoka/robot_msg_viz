@@ -53,7 +53,9 @@ def arrange(views: list[Any], *, timed: bool = False, time_panel: Any | None = N
         parts.append(rrb.TextDocumentView(origin="/", name="empty"))
     root = parts[0] if len(parts) == 1 else rrb.Horizontal(*parts, column_shares=[3, 2])
     if time_panel is None:
-        time_panel = rrb.TimePanel(state="expanded" if timed else "collapsed")
+        # WHY collapsed even when timed: collapsed still shows the play bar and scrubber; expanded adds the
+        # streams tree, which took a quarter of every still (wave 1 site lane, 2026-11-24).
+        time_panel = rrb.TimePanel(state="collapsed")
     return rrb.Blueprint(
         root,
         rrb.BlueprintPanel(state="collapsed"),

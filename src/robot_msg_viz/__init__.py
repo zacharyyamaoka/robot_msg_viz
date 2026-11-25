@@ -22,6 +22,10 @@ from robot_msg_viz.registry import TypeView, catalog, register, view_for
 
 __version__ = "0.1.0"
 
+# WHY at import, last: each view module registers its loggers on import. Registering lazily (on the first
+# catalog() call) let a first viz.show(msg) in a fresh process log through the stock logger only (wave 1, 2026-11-24).
+from robot_msg_viz import views as _views  # noqa: E402,F401
+
 __all__ = [
     "RERUN_SDK_VERSION",
     "TIMELINE",

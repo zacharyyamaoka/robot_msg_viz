@@ -23,7 +23,9 @@ WEB_VIEWER = f"https://app.rerun.io/version/{RERUN_SDK_VERSION}/index.html"
 
 def web_url(rrd_url: str) -> str:
     """Rerun's hosted web viewer playing ``rrd_url`` (an http(s) URL the browser can fetch)."""
-    return f"{WEB_VIEWER}?url={quote(rrd_url, safe='')}"
+    # WHY persist=0: the hosted viewer otherwise remembers each app id's layout across visits, so a gallery
+    # entry whose blueprint changed would open in the stale one (prior-art sweep 2026-11-24, claim 46).
+    return f"{WEB_VIEWER}?url={quote(rrd_url, safe='')}&persist=0"
 
 
 def desktop_command(rrd_url: str) -> str:
