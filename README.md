@@ -1,5 +1,7 @@
 # robot_msg_viz
 
+**[▶ Live landing page](https://zacharyyamaoka.github.io/robot_msg_viz/)**
+
 **A stock [Rerun](https://rerun.io) viewer for every [robot_msgs](https://github.com/zacharyyamaoka/robot_msgs) type.**
 Show one message, save it to a file, or stream them live. Each type opens in a preconfigured layout (a Rerun
 blueprint) instead of a blank canvas.
@@ -35,8 +37,9 @@ nothing of their own to draw (`Header`, `JointTolerance`, the step conditions, �
 | manipulation | 5 of 6 |
 | compare | 4 of 10 (Comparison, ErrorStats, Outcome, Violation; the rest is traj_compare's) |
 
-Use-case dashboards (object detection, grasping, trajectory generation, …) live in the sibling package
-[robot_dashboards](https://github.com/zacharyyamaoka/robot_dashboards) and appear on the same landing page.
+Use-case dashboards (object detection, grasping, trajectory generation, …) come from plugins such as the sibling
+package robot_dashboards (private for now, with its own landing page); the public landing page lists robot_msg_viz's
+own types.
 
 ## Install
 
@@ -66,11 +69,12 @@ installed dashboard. Each entry has:
 - **Download .rrd** and the code.
 
 ```bash
-python -m robot_msg_viz.site build website/dist --shots <dir of stills>
+python -m robot_msg_viz.site build website/dist --no-plugins --shots website/media/shots --hero website/media/hero.mp4
 python -m robot_msg_viz.site serve website/dist --port 4493
 ```
 
-`serve` also runs the bundled web viewer locally, so Open in browser works offline.
+`serve` also runs the bundled web viewer locally, so Open in browser works offline. CI rebuilds the page from `main`
+and deploys it to GitHub Pages ([website/README.md](website/README.md)).
 
 ## How it fits with robot_msgs
 

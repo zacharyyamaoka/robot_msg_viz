@@ -1,11 +1,16 @@
 """Build the gallery site into a folder: pure functions from gallery entries to HTML strings.
 
-    python -m robot_msg_viz.site build OUT [--shots DIR]
+    python -m robot_msg_viz.site build OUT [--shots DIR] [--hero VIDEO] [--no-plugins | --use-cases-only] [--viewer]
 
 Writes ``OUT/index.html`` (Types and Use cases tabs), ``OUT/types/<slug>.html`` and ``OUT/use-cases/<slug>.html``
 (one per entry that has a view), ``OUT/rrd/<slug>.rrd`` (the entry's sample recording, blueprint inside),
-``OUT/shots/<slug>.webp`` and ``<slug>-480.webp`` (from ``DIR/<slug>.png`` when the shooter made one) and
+``OUT/shots/<slug>.webp`` and ``<slug>-480.webp`` (from ``DIR/<slug>.png`` when the shooter made one, or copied from
+``DIR/<slug>.webp`` + ``<slug>-480.webp``), ``OUT/media/`` (the index's hero video and its poster) and
 ``OUT/gallery.json``. Every link is relative, so OUT works at any URL prefix (a GitHub Pages project path too).
+
+One builder for every gallery site (`Site`): robot_msg_viz's public page (``--no-plugins``: types only, so nothing a
+plugin ships reaches it) and a plugin's own page (``--use-cases-only --title robot_dashboards ...``), which can also
+carry Rerun's web viewer itself (``--viewer``, `robot_msg_viz.site.viewer`) for a host the hosted viewer cannot read.
 
 WHY stdlib string building, no template engine or npm: robotmsgs.com's builder works this way and this site
 shares its look (robot_msgs/website/build/pages.py, site/site.css); one less toolchain to install.
@@ -13,6 +18,7 @@ shares its look (robot_msgs/website/build/pages.py, site/site.css); one less too
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import html
 import json
@@ -28,12 +34,14 @@ from robot_msg_viz.gallery import GalleryEntry
 from robot_msg_viz.gallery import entries as gallery_entries
 
 GITHUB = "https://github.com/zacharyyamaoka/robot_msg_viz"
+PUBLIC_SITE = "https://zacharyyamaoka.github.io/robot_msg_viz/"
 ROBOT_MSGS_DOCS = "https://robotmsgs.com/types/{domain}/{name}/"
 STATIC = Path(__file__).resolve().parent / "static"
 THUMB_WIDTH = 480
 RERUN_TOP_BAR = 36 / 800  # the web viewer's menu bar: 36 px of the shooter's 1280x800 still (measured 2026-11-24)
 # WHY a fixed list: build() clears only what it writes, never the whole OUT (OUT may be a folder you care about).
-GENERATED = ("index.html", "types", "use-cases", "rrd", "shots", "static", "gallery.json", "viewer.json")
+GENERATED = ("index.html", "types", "use-cases", "rrd", "shots", "static", "gallery.json", "viewer.json", "media",
+             "viewer")  # fmt: skip
 
 
 def esc(text: object) -> str:
@@ -41,6 +49,45 @@ def esc(text: object) -> str:
 
 
 # ------------------------------------------------------------------------------------------- model
+
+HERO_CODE = """import robot_msg_viz as viz
+
+viz.show(pose)               # open its stock view
+viz.save("pose.rrd", pose)   # a file, layout inside
+with viz.stream("arm") as live:
+    live.log(joint_state)    # live, as they arrive"""
+
+LEAD = (
+    'Hand it a <a href="https://robotmsgs.com">robot_msgs</a> message and Rerun opens already laid out for it: the right '
+    "views, colours and camera, saved as a blueprint. Every card below is a real recording: open it in your browser, or "
+    "on your desktop with one command."
+)
+
+
+@dataclass(frozen=True)
+class Site:
+    """Who the site is for: robot_msg_viz's own page by default, or a plugin's (``use_cases_only``).
+
+    - ``title``: the brand and the page titles; ``tagline``: the index's headline after it.
+    - ``lead_html``: the index's opening paragraph(s), trusted HTML (a plugin's page passes its own: the layers diagram).
+    - ``github``: the repo the header links; ``code``: the index's code block (empty: none).
+    - ``use_cases_only``: one Use cases list, no Types tab (a plugin's page).
+    - ``types_url``: where type pages live when this site has none (chips link there): robot_msg_viz's public page.
+    - ``private``: the page is behind a sign-in, so a desktop viewer cannot fetch a recording by its URL; Open on
+      desktop opens the downloaded file instead.
+    - ``hero`` / ``hero_poster``: paths in OUT of the index's muted, looping video and its still.
+    """
+
+    title: str = "robot_msg_viz"
+    tagline: str = "a ready-made Rerun view for every robot message"
+    lead_html: str = LEAD
+    github: str = GITHUB
+    code: str = HERO_CODE
+    use_cases_only: bool = False
+    types_url: str | None = None
+    private: bool = False
+    hero: str | None = None
+    hero_poster: str | None = None
 
 
 @dataclass(frozen=True)
@@ -65,23 +112,32 @@ def section_of(entry: GalleryEntry) -> str:
 
 
 def find_png(shots: Path | None, slug: str) -> Path | None:
-    """``DIR/<slug>.png``, or ``DIR/shots/<slug>.png`` when DIR is the shooter's own output folder."""
+    """The entry's still: ``DIR/<slug>.png`` (or ``DIR/shots/<slug>.png``, the shooter's own output folder), else a
+    ready ``DIR/<slug>.webp`` (committed site media)."""
     if shots is None:
         return None
-    for candidate in (shots / f"{slug}.png", shots / "shots" / f"{slug}.png"):
-        if candidate.is_file():
-            return candidate
+    for name in (f"{slug}.png", f"{slug}.webp"):
+        for candidate in (shots / name, shots / "shots" / name):
+            if candidate.is_file():
+                return candidate
     return None
 
 
 def convert(png: Path, out: Path, slug: str) -> tuple[str, str, tuple[int, int]]:
-    """The still as WebP at full size and at THUMB_WIDTH; returns (shot, thumb, size)."""
+    """The still as WebP at full size and at THUMB_WIDTH; returns (shot, thumb, size). A WebP with its
+    ``<slug>-480.webp`` beside it is copied as it is (no second lossy pass)."""
     from PIL import Image  # robot-msgs[rerun] brings matplotlib, which brings Pillow
 
     (out / "shots").mkdir(parents=True, exist_ok=True)
+    shot, thumb = f"shots/{slug}.webp", f"shots/{slug}-{THUMB_WIDTH}.webp"
+    ready = png.with_name(f"{slug}-{THUMB_WIDTH}.webp")
+    if png.suffix == ".webp" and ready.is_file():
+        shutil.copyfile(png, out / shot)
+        shutil.copyfile(ready, out / thumb)
+        with Image.open(png) as image:
+            return shot, thumb, image.size
     with Image.open(png) as image:
         still = image.convert("RGB")
-    shot, thumb = f"shots/{slug}.webp", f"shots/{slug}-{THUMB_WIDTH}.webp"
     still.save(out / shot, "WEBP", quality=84, method=5)
     # WHY crop the top bar off the thumbnail only: at 480 px Rerun's own menu bar (logo, command search) is noise
     # that pushes the view down; the full still on the entry page keeps it, as the viewer really looks.
@@ -250,15 +306,24 @@ def thumb_html(item: Item, root: str, *, big: bool = False) -> str:
     return '<span class="ph"><span>no screenshot yet</span></span>'
 
 
-def type_chip(key: str, by_key: dict[str, Item], root: str) -> str:
+def type_chip(key: str, by_key: dict[str, Item], root: str, site: Site | None = None) -> str:
     item = by_key.get(key)
     name = key.split("/")[-1]
     if item is not None and item.live:
         return f'<a class="chip" href="{root}{item.page}" title="{esc(key)}">{esc(name)}</a>'
+    if item is None and site is not None and site.types_url and _has_view(key):
+        url = f"{site.types_url}types/{key.replace('/', '-')}.html"
+        return f'<a class="chip" href="{esc(url)}" rel="noopener" title="{esc(key)}: its stock view">{esc(name)}</a>'
     return f'<span class="chip off" title="{esc(key)}: no view yet">{esc(name)}</span>'
 
 
-def card(item: Item, root: str, by_key: dict[str, Item]) -> str:
+def _has_view(key: str) -> bool:
+    from robot_msg_viz.registry import catalog
+
+    return any(entry.key == key and entry.supported for entry in catalog())
+
+
+def card(item: Item, root: str, by_key: dict[str, Item], site: Site | None = None) -> str:
     """A gallery card. WHY a stretched title link and not an <a> card: a use-case card holds its own type chips,
     and links cannot nest."""
     entry = item.entry
@@ -272,7 +337,7 @@ def card(item: Item, root: str, by_key: dict[str, Item]) -> str:
         flag, cls = '<span class="badge">no view yet</span>', "card off"
     chips = ""
     if entry.kind == "use_case" and entry.consumes:
-        chips = '<p class="chips">' + "".join(type_chip(key, by_key, root) for key in entry.consumes) + "</p>"
+        chips = '<p class="chips">' + "".join(type_chip(key, by_key, root, site) for key in entry.consumes) + "</p>"
     supported = " data-supported" if item.live else ""
     return (
         f'<article class="{cls}" data-key="{esc(entry.key)}" data-words="{esc(words)}"{supported}>'
@@ -282,17 +347,18 @@ def card(item: Item, root: str, by_key: dict[str, Item]) -> str:
     )
 
 
-def sidebar(items: list[Item], root: str, current: str) -> str:
+def sidebar(items: list[Item], root: str, current: str, site: Site) -> str:
     """The left rail on entry pages (robotmsgs.com's): search, the filter, use cases, then types by domain."""
     types = [i for i in items if i.entry.kind == "type"]
     cases = [i for i in items if i.entry.kind != "type"]
     groups = [sidebar_group("use cases", cases, root, current)] if cases else []
     for domain, members in grouped(types):
         groups.append(sidebar_group(domain, members, root, current))
+    filters = filter_control(len(types), sum(i.live for i in types), compact=True) if types else ""
     return (
-        f'<aside id="sidebar" class="sidebar">{drawer_nav(root)}'
+        f'<aside id="sidebar" class="sidebar">{drawer_nav(root, site)}'
         f'<div class="sb-top">{search_box("Search…", "sidebar")}'
-        f"{filter_control(len(types), sum(i.live for i in types), compact=True)}</div>"
+        f"{filters}</div>"
         f'<nav class="sb-nav" aria-label="Gallery">{"".join(groups)}<p class="sb-empty" hidden>Nothing matches.</p></nav>'
         "</aside>"
     )
@@ -311,22 +377,24 @@ def sidebar_group(label: str, members: list[Item], root: str, current: str) -> s
     return f'<div class="sb-group" data-group><h2 class="sb-h">{esc(label)}</h2><ul>{"".join(rows)}</ul></div>'
 
 
-def nav_links(root: str, section: str) -> str:
+def nav_links(root: str, section: str, site: Site) -> str:
     def here(key: str) -> str:
         return ' aria-current="page"' if section == key else ""
 
+    github = f'<a href="{esc(site.github)}" rel="noopener">GitHub<span class="ext" aria-hidden="true">↗</span></a>'
+    if site.use_cases_only:
+        return f'<a href="{root}index.html" data-nav="use-cases"{here("use-cases")}>Use cases</a>{github}'
     return (
         f'<a href="{root}index.html#types" data-nav="types"{here("types")}>Types</a>'
-        f'<a href="{root}index.html#use-cases" data-nav="use-cases"{here("use-cases")}>Use cases</a>'
-        f'<a href="{GITHUB}" rel="noopener">GitHub<span class="ext" aria-hidden="true">↗</span></a>'
+        f'<a href="{root}index.html#use-cases" data-nav="use-cases"{here("use-cases")}>Use cases</a>{github}'
     )
 
 
-def drawer_nav(root: str) -> str:
-    return f'<nav class="drawer-nav" aria-label="Site">{nav_links(root, "")}</nav>'
+def drawer_nav(root: str, site: Site) -> str:
+    return f'<nav class="drawer-nav" aria-label="Site">{nav_links(root, "", site)}</nav>'
 
 
-def shell(*, title: str, description: str, root: str, body: str, version: str, section: str = "",
+def shell(*, title: str, description: str, root: str, body: str, version: str, site: Site, section: str = "",
           side: str = "") -> str:  # fmt: skip
     layout = "docs" if side else "wide"
     menu = (
@@ -358,10 +426,10 @@ def shell(*, title: str, description: str, root: str, body: str, version: str, s
 <header class="topbar">
   <div class="topbar-in">
     {menu}
-    <a class="brand" href="{root}index.html">{BRAND}<span>robot_msg_viz</span></a>
-    <nav class="topnav" aria-label="Main">{nav_links(root, section)}</nav>
+    <a class="brand" href="{root}index.html">{BRAND}<span>{esc(site.title)}</span></a>
+    <nav class="topnav" aria-label="Main">{nav_links(root, section, site)}</nav>
     <div class="spacer"></div>
-    <a class="icon-btn gh-btn" href="{GITHUB}" rel="noopener" aria-label="robot_msg_viz on GitHub" title="GitHub">{GITHUB_ICON}</a>
+    <a class="icon-btn gh-btn" href="{esc(site.github)}" rel="noopener" aria-label="{esc(site.title)} on GitHub" title="GitHub">{GITHUB_ICON}</a>
     <button class="icon-btn theme-btn" type="button" aria-label="Switch between light and dark">{THEME_ICONS}</button>
   </div>
 </header>
@@ -369,7 +437,7 @@ def shell(*, title: str, description: str, root: str, body: str, version: str, s
 {side}
 <main id="main" class="main" tabindex="-1">
 {body}
-<footer class="foot"><span>Rerun {RERUN_SDK_VERSION} · generated from <code>robot_msg_viz.gallery.entries()</code>, not written per page</span><span><a href="{GITHUB}" rel="noopener">GitHub</a> · MIT license</span></footer>
+<footer class="foot"><span>Rerun {RERUN_SDK_VERSION} · generated from <code>robot_msg_viz.gallery.entries()</code>, not written per page</span><span><a href="{esc(site.github)}" rel="noopener">GitHub</a> · MIT license</span></footer>
 </main>
 </div>
 <div class="scrim" hidden></div>
@@ -381,15 +449,32 @@ def shell(*, title: str, description: str, root: str, body: str, version: str, s
 
 # ------------------------------------------------------------------------------------------- pages
 
-HERO_CODE = """import robot_msg_viz as viz
+def hero_media(site: Site, root: str) -> str:
+    """The index's hero: a short muted, looping video of the real viewer, its poster the fallback (no video, reduced
+    motion, or before it loads)."""
+    if not site.hero:
+        return ""
+    poster = f' poster="{root}{esc(site.hero_poster)}"' if site.hero_poster else ""
+    still = (f'<img src="{root}{esc(site.hero_poster)}" alt="The Rerun viewer playing the gallery\'s recordings" '
+             'width="1280" height="800">' if site.hero_poster else "")  # fmt: skip
+    return (
+        '<figure class="hero-media">'
+        f'<video autoplay muted loop playsinline preload="auto" width="1280" height="800"{poster} '
+        'aria-label="The real Rerun web viewer playing the gallery\'s recordings">'
+        f'<source src="{root}{esc(site.hero)}" type="video/mp4">{still}</video>'
+        '<figcaption class="muted small">Recorded in the real Rerun web viewer, from the recordings below.</figcaption>'
+        "</figure>"
+    )
 
-viz.show(pose)               # open its stock view
-viz.save("pose.rrd", pose)   # a file, layout inside
-with viz.stream("arm") as live:
-    live.log(joint_state)    # live, as they arrive"""
+
+EMPTY_USE_CASES = (
+    '<p class="none">No use cases yet: dashboards for a whole job come from plugins (entry-point group '
+    "<code>robot_msg_viz.gallery</code>), and none is installed in this build.</p>"
+)
 
 
-def index_page(items: list[Item], version: str) -> str:
+def index_page(items: list[Item], version: str, site: Site | None = None) -> str:
+    site = site or Site()
     root = ""
     by_key = {i.entry.key: i for i in items}
     types = [i for i in items if i.entry.kind == "type"]
@@ -399,7 +484,7 @@ def index_page(items: list[Item], version: str) -> str:
     sections = []
     for domain, members in grouped(types):
         live = sum(i.live for i in members)
-        cards = "".join(card(i, root, by_key) for i in members)
+        cards = "".join(card(i, root, by_key, site) for i in members)
         sections.append(
             f'<section class="group" data-group aria-labelledby="d-{esc(domain)}">'
             f'<div class="group-h"><h2 id="d-{esc(domain)}">{esc(domain)}</h2>'
@@ -415,7 +500,7 @@ def index_page(items: list[Item], version: str) -> str:
     if cases:
         case_sections = []
         for category, members in grouped(cases):
-            cards = "".join(card(i, root, by_key) for i in members)
+            cards = "".join(card(i, root, by_key, site) for i in members)
             case_sections.append(
                 f'<section class="group" data-group aria-labelledby="c-{esc(category)}">'
                 f'<div class="group-h"><h2 id="c-{esc(category)}">{esc(category)}</h2>'
@@ -427,24 +512,33 @@ def index_page(items: list[Item], version: str) -> str:
             "Rerun layout, each with sample data.</p>" + "".join(case_sections)
         )
     else:
-        cases_panel = (
-            '<div class="none"><p><strong>No use cases yet.</strong></p><p class="muted">Dashboards for '
-            "object detection, grasping, trajectory generation and more come from plugins such as "
-            "<code>robot_dashboards</code> (entry-point group <code>robot_msg_viz.gallery</code>). Add one and "
-            "rebuild this site.</p></div>"
-        )
+        # WHY one plain line, naming no plugin: the public page is built with none installed (a plugin may be private)
+        cases_panel = EMPTY_USE_CASES
 
-    body = f"""<div class="home">
-<section class="hero" aria-labelledby="hero-h">
+    code = f'<div class="hero-code">{code_block(site.code, label="example")}</div>' if site.code else ""
+    hero = f"""<section class="hero{' no-code' if not site.code else ''}" aria-labelledby="hero-h">
   <div class="hero-text">
     <p class="eyebrow">Rerun {RERUN_SDK_VERSION} · robot_msgs</p>
-    <h1 id="hero-h">robot_msg_viz <span class="dash">—</span> a ready-made Rerun view for every robot message</h1>
-    <p class="lead">Hand it a <a href="https://robotmsgs.com">robot_msgs</a> message and Rerun opens already laid out for it:
-    the right views, colours and camera, saved as a blueprint. Every card below is a real recording: open it in your
-    browser, or on your desktop with one command.</p>
+    <h1 id="hero-h">{esc(site.title)} <span class="dash">—</span> {esc(site.tagline)}</h1>
+    <div class="lead">{site.lead_html}</div>
   </div>
-  <div class="hero-code">{code_block(HERO_CODE, label="example")}</div>
+  {code}
 </section>
+{hero_media(site, root)}"""
+    title = f"{site.title} — {site.tagline}"
+    if site.use_cases_only:
+        body = f"""<div class="home">
+{hero}
+<section class="panel" id="panel-use-cases" aria-label="Use cases" data-panel="use-cases">
+{cases_panel}
+</section>
+</div>"""
+        return shell(title=title, description=f"{site.tagline}: dashboards on Rerun {RERUN_SDK_VERSION}, each with a "
+                     "screenshot and sample data.", root=root, body=body, version=version, site=site,
+                     section="use-cases")  # fmt: skip
+
+    body = f"""<div class="home">
+{hero}
 
 <div class="tabs" role="tablist" aria-label="Gallery">
   <button class="tab" type="button" role="tab" id="tab-types" data-tab="types" aria-controls="panel-types" aria-selected="true">Types <span class="n">{len(types)}</span></button>
@@ -458,14 +552,15 @@ def index_page(items: list[Item], version: str) -> str:
 </section>
 </div>"""
     return shell(
-        title="robot_msg_viz — a ready-made Rerun view for every robot message",
+        title=title,
         description=f"A stock Rerun {RERUN_SDK_VERSION} view for every robot_msgs type, and dashboards for common "
         "robotics use cases, each with a screenshot and sample data.",
-        root=root, body=body, version=version, section="types",
+        root=root, body=body, version=version, site=site, section="types",
     )  # fmt: skip
 
 
-def entry_page(item: Item, items: list[Item], version: str) -> str:
+def entry_page(item: Item, items: list[Item], version: str, site: Site | None = None) -> str:
+    site = site or Site()
     root = "../"
     entry = item.entry
     by_key = {i.entry.key: i for i in items}
@@ -502,7 +597,7 @@ def entry_page(item: Item, items: list[Item], version: str) -> str:
                  f'<p class="meta-line">Takes (adapters) <span class="chips">{adapter_chips}</span>')
         related_h = "Types it draws"
         related = (
-            '<p class="chips">' + "".join(type_chip(k, by_key, root) for k in entry.consumes) + "</p>"
+            '<p class="chips">' + "".join(type_chip(k, by_key, root, site) for k in entry.consumes) + "</p>"
             if entry.consumes else '<p class="muted">It lists no robot_msgs types.</p>'
         )  # fmt: skip
 
@@ -513,13 +608,21 @@ def entry_page(item: Item, items: list[Item], version: str) -> str:
     )
     desktop = launch.desktop_command("{url}")
     rrd_name = item.rrd.split("/")[-1] if item.rrd else ""
+    # WHY from the download on a private site: behind a sign-in the desktop viewer gets the sign-in page, not the file
+    private = f' data-desktop-file="~/Downloads/{esc(rrd_name)}"' if site.private else ""
+    question = "" if is_type else '<p class="eyebrow">The question it answers</p>'
+    links = ""
+    if entry.links:
+        links = '<p class="meta-line">' + " · ".join(
+            f'<a href="{esc(url)}" rel="noopener">{esc(label)}<span class="ext" aria-hidden="true">↗</span></a>'
+            for label, url in entry.links) + "</p>"  # fmt: skip
     body = f"""<article class="entry">
 <nav class="crumbs" aria-label="Breadcrumb"><a href="{root}index.html#{section}">{crumb_root}</a> <span aria-hidden="true">/</span> <span>{esc(entry.group)}</span> <span aria-hidden="true">/</span> <span aria-current="page">{esc(entry.title)}</span></nav>
 <h1>{esc(entry.title)}</h1>
-<p class="lead">{esc(entry.summary)}</p>
+{question}<p class="lead">{esc(entry.summary)}</p>
 <p class="meta-line">{meta}</p>
-
-<div class="player" data-rrd="{root}{item.rrd}" data-web-viewer="{esc(launch.WEB_VIEWER)}" data-desktop="{esc(desktop)}" data-title="{esc(entry.title)}">
+{links}
+<div class="player" data-rrd="{root}{item.rrd}" data-web-viewer="{esc(launch.WEB_VIEWER)}" data-desktop="{esc(desktop)}" data-title="{esc(entry.title)}"{private}>
   <div class="stage">
     <button class="stage-shot" type="button" data-act="web" aria-label="Open {esc(entry.title)} in the browser viewer">
       {thumb_html(item, root, big=True)}
@@ -549,9 +652,9 @@ def entry_page(item: Item, items: list[Item], version: str) -> str:
 </section>
 </article>"""
     return shell(
-        title=f"{entry.title} · robot_msg_viz",
+        title=f"{entry.title} · {site.title}",
         description=entry.summary,
-        root=root, body=body, version=version, section=section, side=sidebar(items, root, entry.key),
+        root=root, body=body, version=version, site=site, section=section, side=sidebar(items, root, entry.key, site),
     )  # fmt: skip
 
 
@@ -577,26 +680,47 @@ def manifest_row(item: Item) -> dict:
     }  # fmt: skip
 
 
-def build(out: str | Path, shots: str | Path | None = None, gallery: list[GalleryEntry] | None = None) -> dict:
-    """Write the site into ``out``; returns counts. ``gallery`` defaults to `robot_msg_viz.gallery.entries()`."""
+def build(
+    out: str | Path, shots: str | Path | None = None, gallery: list[GalleryEntry] | None = None, *,
+    site: Site | None = None, hero: str | Path | None = None, viewer: bool | str | Path = False,
+) -> dict:  # fmt: skip
+    """Write the site into ``out``; returns counts. ``gallery`` defaults to `robot_msg_viz.gallery.entries()`.
+
+    ``hero``: an .mp4 for the index (its poster: the same name with .webp, beside it). ``viewer``: True vendors Rerun's
+    web viewer from the installed rerun-sdk into OUT/viewer/ (a folder: from there), and OUT/viewer.json points at it."""
     out = Path(out).resolve()
     shots = Path(shots).resolve() if shots is not None else None
     gallery = gallery_entries() if gallery is None else list(gallery)
+    site = site or Site()
     out.mkdir(parents=True, exist_ok=True)
     clean(out)
     shutil.copytree(STATIC, out / "static")
+    if hero is not None:
+        hero = Path(hero).resolve()
+        (out / "media").mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(hero, out / "media" / hero.name)
+        poster = hero.with_suffix(".webp")
+        if poster.is_file():
+            shutil.copyfile(poster, out / "media" / poster.name)
+        site = dataclasses.replace(site, hero=f"media/{hero.name}",
+                                   hero_poster=f"media/{poster.name}" if poster.is_file() else None)  # fmt: skip
+    vendored = None
+    if viewer:
+        from robot_msg_viz.site.viewer import vendor_viewer
+
+        vendored = vendor_viewer(out, source=None if viewer is True else viewer)
     digest = hashlib.sha256()
     for name in sorted(p.name for p in STATIC.iterdir() if p.is_file()):
         digest.update((STATIC / name).read_bytes())
     version = digest.hexdigest()[:8]
 
     items = make_items(gallery, out, shots)
-    (out / "index.html").write_text(index_page(items, version), encoding="utf-8")
+    (out / "index.html").write_text(index_page(items, version, site), encoding="utf-8")
     for item in items:
         if item.live:
             page = out / item.page
             page.parent.mkdir(parents=True, exist_ok=True)
-            page.write_text(entry_page(item, items, version), encoding="utf-8")
+            page.write_text(entry_page(item, items, version, site), encoding="utf-8")
     (out / "gallery.json").write_text(json.dumps([manifest_row(i) for i in items], indent=1), encoding="utf-8")
     types = [i for i in items if i.entry.kind == "type"]
     return {
@@ -605,4 +729,6 @@ def build(out: str | Path, shots: str | Path | None = None, gallery: list[Galler
         "supported": sum(i.live for i in types),
         "use_cases": sum(i.entry.kind != "type" for i in items),
         "screenshots": sum(i.shot is not None for i in items),
+        "hero": site.hero,
+        "viewer": vendored,
     }

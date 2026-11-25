@@ -140,6 +140,20 @@ a.chip:hover { background: var(--hover); border-color: var(--border-strong); }
 .hero h1 .dash { color: var(--faint); font-weight: 400; }
 .hero .lead { font-size: 16.5px; color: var(--muted); margin: 0; }
 .hero-code .code { margin: 0; }
+.hero.no-code { grid-template-columns: minmax(0, 1fr); }
+.hero .lead p { margin: 0 0 10px; }
+/* the hero video: the real viewer, recorded; its poster stands in when video cannot play */
+.hero-media { margin: 0 0 30px; }
+.hero-media video, .hero-media img { display: block; width: 100%; height: auto; aspect-ratio: 16 / 10; border: 1px solid var(--border); border-radius: 12px; background: var(--stage); }
+.hero-media figcaption { margin-top: 8px; }
+@media (prefers-reduced-motion: reduce) { .hero-media video { animation: none; } }
+/* the layers diagram a plugin's intro may carry */
+.layers { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; margin: 16px 0 4px; }
+.layers .layer { flex: 1 1 150px; min-width: 0; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: var(--bg-soft); }
+.layers .layer b { display: block; font: 600 13px var(--mono); color: var(--fg); margin-bottom: 4px; }
+.layers .layer span { display: block; font-size: 13px; color: var(--muted); line-height: 1.45; }
+.layers .arrow { align-self: center; color: var(--faint); font-size: 18px; }
+@media (max-width: 767px) { .layers { flex-direction: column; } .layers .arrow { transform: rotate(90deg); } }
 .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin: 0 0 18px; }
 .tab { appearance: none; background: none; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; color: var(--muted); font: 500 15px var(--sans); padding: 10px 14px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; }
 .tab:hover { color: var(--fg); }

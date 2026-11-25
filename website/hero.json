@@ -1,0 +1,53 @@
+{
+ "_why": "The landing page's hero (tools/hero_video.py): the V1 JointTrajectory first (Zach's pick, 2026-11-25), its tabs clicked through while the arm plays, then three more stock views. Clicks early in their segment and no camera drags: in the headless software renderer a drag over a point cloud advanced one step a second. Coordinates are in the 1280x800 viewer. A click on a heavy tab can land a second late.",
+ "segments": [
+  {
+   "key": "trajectory/JointTrajectory",
+   "seconds": 10.5,
+   "play": [
+    0.0,
+    5.4
+   ],
+   "settle_ms": 3500,
+   "clicks": [
+    [
+     2.4,
+     713,
+     50
+    ],
+    [
+     4.4,
+     905,
+     50
+    ],
+    [
+     6.6,
+     995,
+     50
+    ]
+   ]
+  },
+  {
+   "key": "trajectory/PoseTrajectory",
+   "seconds": 3.2,
+   "play": [
+    0.0,
+    5.15
+   ],
+   "speed": 1.6
+  },
+  {
+   "key": "vision/Detection2DArray",
+   "seconds": 2.4
+  },
+  {
+   "key": "sensor/PointCloud",
+   "seconds": 2.4
+  }
+ ],
+ "poster": [
+  0,
+  2.2
+ ],
+ "crf": 30
+}

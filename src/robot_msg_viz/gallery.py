@@ -31,6 +31,7 @@ class GalleryEntry:
     - ``consumes``: the robot_msgs type keys it draws (links a use case to its types).
     - ``source``: the package that provides it (for the page and the ruler).
     - ``viewers`` / ``adapters``: where it can be drawn and what it takes in (the use-case page lists both).
+    - ``links``: (label, url) pairs for its page, such as its source on GitHub.
     """
 
     kind: str
@@ -49,6 +50,8 @@ class GalleryEntry:
     viewers: tuple[tuple[str, str], ...] = (("Rerun", "supported"),)
     # the input adapters it takes (a use case: robot_msgs plus whatever its package registers)
     adapters: tuple[str, ...] = ("robot_msgs",)
+    # (label, url) shown on the entry's page: its source, a writeup
+    links: tuple[tuple[str, str], ...] = ()
 
     @property
     def slug(self) -> str:

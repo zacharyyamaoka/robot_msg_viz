@@ -1,0 +1,74 @@
+# The landing page, https://zacharyyamaoka.github.io/robot_msg_viz/: test and build on every push and PR, deploy to
+# GitHub Pages on a push to main (and a manual run on main).
+#
+# WHY the .rrd files and pages are built here but the stills and the hero video are committed (website/media, ~3 MB):
+#   shooting 53 views in a headless WebGL viewer takes ~10 min and software rendering on a runner; the recordings come
+#   from code, so they are rebuilt from the pushed commit, and tests/test_site_public.py fails when a supported type has
+#   no committed still.
+# WHY --no-plugins: the public page shows robot_msg_viz's own types only. Plugins add use cases through an entry point,
+#   and one of them (robot_dashboards) is private; nothing it ships may reach this page. It is not installed here
+#   either; the build flag makes that a rule, not an accident, and the check step below greps the result.
+# WHY --no-sources and robot_msgs from its GitHub commit: pyproject's [tool.uv.sources] points at /home/bam checkouts
+#   and its default "site" group pulls robot-dashboards (private); neither exists on a runner. `uv pip install` reads
+#   no dependency groups. robot-msgs 0.3.1 is not on PyPI yet and the stock JointTrajectory view needs its
+#   log_joint_tabs (e5f375d); pinned to a commit so a robot_msgs push cannot change this run. Back to PyPI once a
+#   robot-msgs release has it.
+name: site
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv venv --python 3.12
+      - run: >-
+          uv pip install --no-sources -e ".[test]"
+          "robot-msgs[rerun] @ git+https://github.com/zacharyyamaoka/robot_msgs@e5f375dd98e3b3cd3066f284c91db9ef63ea48a7"
+      - name: test
+        run: .venv/bin/python -m pytest -q
+        env:
+          MPLBACKEND: Agg
+      - name: build
+        run: >-
+          .venv/bin/python -m robot_msg_viz.site build _site --no-plugins
+          --shots website/media/shots --hero website/media/hero.mp4
+        env:
+          MPLBACKEND: Agg
+      - name: nothing private in the page
+        run: |
+          if [ -d _site/use-cases ]; then echo "::error::the public page has use-case pages"; exit 1; fi
+          leaks=$(grep -rIlE '/home/|zach_brain|\.claude\b|[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+\.[A-Za-z0-9.-]*[a-z]{2,}' \
+                  --include='*.html' --include='*.json' --include='*.js' --include='*.css' _site || true)
+          if [ -n "$leaks" ]; then echo "::error::private text in $leaks"; exit 1; fi
+          du -sh _site; ls _site
+      - uses: actions/configure-pages@v5
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+      - uses: actions/upload-pages-artifact@v3
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        with:
+          path: _site
+  # WHY a second job (GitHub's own static-site template): deploy-pages reads the artifact the build job uploaded
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -189,11 +189,15 @@
       var renderer = new URLSearchParams(location.search).get("renderer");
       return renderer ? url + "&renderer=" + encodeURIComponent(renderer) : url;
     }
-    // WHY viewer.json: `serve` answers it with its local Rerun web viewer; a static deploy has none and uses
-    // the hosted app.rerun.io, which must be at least as new as the SDK that wrote the .rrd.
-    var viewer = !served ? Promise.resolve(null) : fetch(base + "viewer.json", { cache: "no-store" })
+    // WHY viewer.json: `serve` answers it with its local Rerun web viewer, and a site built with --viewer ships one
+    // ("viewer/", relative to the site root); a static deploy without it uses the hosted app.rerun.io, which must be
+    // at least as new as the SDK that wrote the .rrd.
+    var viewerJson = new URL(base + "viewer.json", location.href).href;
+    var viewer = !served ? Promise.resolve(null) : fetch(viewerJson, { cache: "no-store" })
       .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (json) { return (json && json.web_viewer) || player.dataset.webViewer; })
+      .then(function (json) {
+        return json && json.web_viewer ? new URL(json.web_viewer, viewerJson).href : player.dataset.webViewer;
+      })
       .catch(function () { return player.dataset.webViewer; });
     viewer.then(function (url) {
       if (!url || !newtab) return;
@@ -245,14 +249,22 @@
     var desktopButton = player.querySelector("[data-act=desktop]");
     if (desktop && desktopButton) {
       desktopButton.addEventListener("click", function () {
-        // From a file:// page the desktop viewer takes the file path itself.
-        var target = served ? rrdUrl : decodeURIComponent(new URL(rrdUrl).pathname);
+        // From a file:// page the desktop viewer takes the file path itself. Behind a sign-in (data-desktop-file) the
+        // viewer cannot fetch the URL, so the command opens the downloaded file and the download starts with it.
+        var file = player.dataset.desktopFile;
+        var target = file || (served ? rrdUrl : decodeURIComponent(new URL(rrdUrl).pathname));
         var command = player.dataset.desktop.replace("{url}", target);
         desktop.querySelector("[data-command] code").textContent = command;
         desktop.hidden = false;
         var heading = desktop.querySelector(".desktop-h");
-        copyText(command).then(function () { heading.textContent = "Copied to your clipboard. Paste it in a terminal:"; },
-          function () { heading.textContent = "Run this in a terminal:"; });
+        var prefix = "";
+        if (file) {
+          var link = player.querySelector("a[download]");
+          if (link) link.click();
+          prefix = "Downloading the .rrd (this page is behind a sign-in, so the viewer cannot fetch its URL). ";
+        }
+        copyText(command).then(function () { heading.textContent = prefix + "Copied to your clipboard. Paste it in a terminal:"; },
+          function () { heading.textContent = prefix + "Run this in a terminal:"; });
       });
     }
   });
