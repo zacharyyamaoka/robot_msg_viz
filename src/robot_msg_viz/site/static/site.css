@@ -141,6 +141,9 @@ a.chip:hover { background: var(--hover); border-color: var(--border-strong); }
 .hero .lead { font-size: 16.5px; color: var(--muted); margin: 0; }
 .hero-code .code { margin: 0; }
 .hero.no-code { grid-template-columns: minmax(0, 1fr); }
+/* no code block beside it: the intro may carry a wide diagram, the prose keeps its reading width */
+.hero.no-code .lead { max-width: none; }
+.hero.no-code .lead p { max-width: 75ch; }
 .hero .lead p { margin: 0 0 10px; }
 /* the hero video: the real viewer, recorded; its poster stands in when video cannot play */
 .hero-media { margin: 0 0 30px; }
