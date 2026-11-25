@@ -4,22 +4,25 @@ What each view shows:
 
 - Trajectory: every channel over time in one plot, the legend naming the channel.
 - TrajectoryPoint / JointTrajectoryPoint: a table of the sample's values at its instant.
-- JointTrajectory: one plot per field (position, velocity, acceleration in degrees), one line per joint in a fixed
-  colour per joint, the limits the motion comes near as thin lines, and a table (which colour is which joint, its
-  range, peak speed and acceleration against its limits, any violation).
+- JointTrajectory: V1, robot_msgs' stock trajectory viewer (Zach's pick, 2026-11-25). With ``robot=`` (a URDF): the arm
+  on the left half (start / end ghosts, the tool path), tabs on the right half: q · qd · qdd · qddd (a strip per joint
+  in degrees with its limits) · q / qd / qdd (% of each joint's limits under the playhead table) · TCP. Without a URDF:
+  those tabs, less TCP, at full width. The gallery sample is a pick on the vendored UR5e (assets/ur5e).
 - PoseTrajectory: the path in 3D with frames along it and the frame moving on the timeline, beside its position (mm)
   and roll / pitch / yaw (deg) over time. PoseTrajectoryPoint: that one frame, with its velocity arrow.
 - JointLimits: each joint's position range as a bar on one degree scale, beside a table of every bound and cap.
 - JointLimitViolation: the record as one sentence card, in degrees.
 
 WHY overrides of robot_msgs' stock logger here (all registered on `robot_msg_viz._engine.log`):
-- JointTrajectory: the stock logs radians, its colours follow the entity path (so one joint changes colour from plot
-  to plot) and its legend names the run, not the joint; here one plot holds every joint, and the table names the colours.
-  WHY degrees for every joint: Zach's rule (angles on screen in degrees) and robot_msgs carries no joint type, so every
-  joint is read as revolute, as the stock's ``degrees=True`` and traj_compare's export do; the table says so.
-  The URDF dashboard (``robot=``) and every other stock option still go to robot_msgs' logger untouched. The babble
-  round in traj_compare/docs/proposals/rerun-joint-trajectory-2026-11-24/ picks the stock JointTrajectory look (the
-  URDF arm moving); its pick replaces this view.
+- JointTrajectory (Zach, 2026-11-25): "when we are look at just a normal trajectory without comparison than I think it
+  makes sense to just keep with V1. that should basically just be the stock like robot msg viz viewer for a joint
+  trajectory". V1 lives in robot_msgs (`robot_msgs.viz.rerun`: ``log(traj, robot=...)`` + `robot_blueprint`, and
+  `log_joint_tabs` + `joint_tabs_blueprint` with no URDF); this module only routes to it, never copies it. Without
+  options the stock logger's own output (radians, frozen by robot_msgs' golden digest) is replaced by V1's tabs; any
+  option (``robot=``, ``degrees=``, ``color=``, ...) goes to robot_msgs' logger untouched. Every joint reads as revolute
+  with no URDF (robot_msgs carries no joint type), as ``degrees=True`` does.
+  An overlay of several JointTrajectories (``show(target=a, real=b)``) logs each one's V1 data and lays them out with
+  one plot per field (``views``); comparing two runs is the comparison view's job (traj_compare, V2).
 - PoseTrajectory: the stock plots raw quaternion components (unreadable) at ``/positions``, where they would share a
   plot with a JointTrajectory's joints; here position is in mm at ``/position_mm`` and orientation is roll / pitch /
   yaw in degrees at ``/orientation_deg``.
@@ -57,6 +60,7 @@ from robot_msgs.trajectory.joint_limit_violation import joint_limit_violations
 from robot_msgs.viz import rerun as stock
 
 from robot_msg_viz._engine import TIMELINE, log, part
+from robot_msg_viz.assets import UR5E_URDF
 from robot_msg_viz.registry import TypeView, register
 from robot_msg_viz.views._common import DEG, origin_triad, rng, world
 
@@ -93,13 +97,6 @@ EFFORT_UNIT = "N·m"
 
 def joint_color(index: int) -> tuple[int, int, int] | None:
     return JOINT_COLORS[index] if index < len(JOINT_COLORS) else None
-
-
-def _faded(color: tuple[int, int, int] | None) -> tuple[int, int, int]:
-    """A limit line in its joint's hue, quieter. WHY opaque, not alpha: in 0.40 an alpha line drew darker, not fainter."""
-    if color is None:
-        return LIMIT_GREY
-    return tuple(int(0.55 * c + 0.45 * g) for c, g in zip(color, LIMIT_GREY, strict=True))  # type: ignore[return-value]
 
 
 def _num(value: float, digits: int = 4) -> str:
@@ -289,146 +286,28 @@ def _(point: JointTrajectoryPoint, name: str | None = None, *, recording: Any) -
     _notes(recording, name or "JointTrajectoryPoint", "\n".join(rows))
 
 
-# ── JointTrajectory: one plot per field, one line per joint ─────────────────────────────────────────────────────────
-
-
-def _near(values: np.ndarray, bound: float) -> bool:
-    """A limit is drawn when the joint comes within one of its own motion spans of it (or past it).
-
-    WHY (robot_msgs' R3 strip rule, applied per joint): a ±360° limit drawn beside a 60° move flattens every line in a
-    plot that holds all joints; the table keeps every limit and its margin, so nothing is hidden."""
-    values = values[np.isfinite(values)]
-    if values.size == 0 or not np.isfinite(bound):
-        return False
-    low, high = float(values.min()), float(values.max())
-    span = max(high - low, 1e-9)
-    return low - span <= bound <= high + span
-
-
-def _bound(limits: JointLimits | None, attribute: str, scale: float, magnitude: bool, side: str) -> np.ndarray | None:
-    values = None if limits is None else getattr(limits, attribute)
-    if values is None:
-        return None
-    values = np.asarray(values, dtype=np.float64) * scale
-    return -values if magnitude and side == "lower" else values
-
-
-def _log_limit_lines(traj: JointTrajectory, recording: Any, seconds: np.ndarray) -> None:
-    """Each limit the motion comes near: one line per distinct value, grey when several joints share it."""
-    names = [str(n) for n in traj.joint_names]
-    span = np.array([seconds[0], seconds[-1]]) if seconds.size else np.zeros(2)
-    for field_name, _, unit, scale, (low_name, high_name, magnitude) in JOINT_FIELDS:
-        values = getattr(traj, field_name)
-        if values is None:
-            continue
-        shown = np.asarray(values, dtype=np.float64) * scale
-        for side, attribute in (("lower", low_name), ("upper", high_name)):
-            bounds = _bound(traj.limits, attribute, scale, magnitude, side)
-            if bounds is None:
-                continue
-            groups: dict[float, list[int]] = {}
-            for index, value in enumerate(bounds):
-                if np.isfinite(value):
-                    groups.setdefault(round(float(value), 9), []).append(index)
-            for value, members in groups.items():
-                if not any(_near(shown[:, i], value) for i in members):
-                    continue
-                who = "all joints" if len(members) == len(names) else ", ".join(names[i] for i in members)
-                color = LIMIT_GREY if len(members) > 1 else _faded(joint_color(members[0]))
-                label = f"{side} limit {_num(value)} {unit} ({who})"
-                _series(recording, f"{field_name}/{part(names[members[0]])}/{side}_limit", span, np.full(2, value),
-                        label=label, color=color, width=1.0)  # fmt: skip
-
-
-def _joint_summary(traj: JointTrajectory) -> str:
-    """The table beside the plots: each joint's range, peaks against its limits, and every violation."""
-    names = [str(n) for n in traj.joint_names]
-    limits = traj.limits
-    duration = float(traj.t[-1] - traj.t[0]) if len(traj) else 0.0
-    head = f"**{_num(duration, 4)} s · {len(traj)} samples · {len(names)} joints**"
-    if traj.header.frame_id:
-        head += f" · frame `{traj.header.frame_id}`"
-    lines = [head, ""]
-    if limits is not None:
-        violations = joint_limit_violations(traj)
-        if violations:
-            lines.append(f"**{len(violations)} limit violation{'s' if len(violations) != 1 else ''}**")
-            lines += [f"- {violation_sentence(v)}" for v in violations]
-        else:
-            lines.append("Within every stated limit.")
-        lines.append("")
-
-    def peak(field_name: str) -> np.ndarray | None:
-        values = getattr(traj, field_name)
-        return None if values is None else np.nanmax(np.abs(np.asarray(values, dtype=np.float64)), axis=0) * DEG
-
-    def of_limit(value: float, attribute: str, index: int) -> str:
-        bound = None if limits is None or getattr(limits, attribute) is None else float(getattr(limits, attribute)[index])
-        if bound is None or not np.isfinite(bound) or bound <= 0:
-            return _num(value, 3)
-        return f"{_num(value, 3)} · {100.0 * value / (bound * DEG):.0f}%"
-
-    q = np.asarray(traj.positions, dtype=np.float64) * DEG
-    speed, accel = peak("velocities"), peak("accelerations")
-    # WHY a colour column and no plot legends: one plot holds every joint, and a six-joint legend covered a third of
-    # each plot; the colour stays the joint's in all three plots, and hovering a line names it
-    header = ["joint", "line", "range (deg)"]
-    if speed is not None:
-        header.append("peak speed (deg/s)")
-    if accel is not None:
-        header.append("peak accel (deg/s²)")
-    positions_bounded = limits is not None and (limits.min_position is not None or limits.max_position is not None)
-    if positions_bounded:
-        header.append("to limit (deg)")
-    lines += ["| " + " | ".join(header) + " |", "|" + "---|" * len(header)]
-    for index, joint in enumerate(names):
-        cells = [joint, COLOR_NAMES[index] if index < len(COLOR_NAMES) else "Rerun's",
-                 f"{_num(np.nanmin(q[:, index]), 3)} … {_num(np.nanmax(q[:, index]), 3)}"]  # fmt: skip
-        if speed is not None:
-            cells.append(of_limit(speed[index], "max_velocity", index))
-        if accel is not None:
-            cells.append(of_limit(accel[index], "max_acceleration", index))
-        if positions_bounded:
-            low = -np.inf if limits.min_position is None else float(limits.min_position[index]) * DEG
-            high = np.inf if limits.max_position is None else float(limits.max_position[index]) * DEG
-            to_low, to_high = np.nanmin(q[:, index]) - low, high - np.nanmax(q[:, index])
-            if not (np.isfinite(to_low) or np.isfinite(to_high)):
-                cells.append("none stated")
-            elif to_low <= to_high:
-                cells.append(f"{_num(to_low, 3)} to {_num(low, 4)}")
-            else:
-                cells.append(f"{_num(to_high, 3)} to {_num(high, 4)}")
-        lines.append("| " + " | ".join(cells) + " |")
-    lines.append("")
-    lines.append("*Angles in degrees, every joint read as revolute (robot_msgs carries no joint type). % = of the "
-                 "joint's own limit. A thin line is a limit the joint comes within one of its own motion spans of "
-                 "(grey: shared by several joints).*")  # fmt: skip
-    return "\n".join(lines)
+# ── JointTrajectory: V1, robot_msgs' stock trajectory viewer ───────────────────────────────────────────────────────
 
 
 @log.register
 def _(traj: JointTrajectory, name: str | None = None, *, recording: Any, **options: Any) -> None:
-    if options:  # robot= (the URDF dashboard), degrees=, color=, prefix=, t0=, label=: robot_msgs' own logger
+    if options:  # robot= (V1 with its arm), degrees=, color=, prefix=, t0=, label=: robot_msgs' own logger
         _stock(traj, name, recording, **options)
         return
-    name = name or "JointTrajectory"
-    seconds = _seconds(traj)
-    for field_name, _, unit, scale, _ in JOINT_FIELDS:
-        values = getattr(traj, field_name)
-        if values is None:
-            continue
-        shown = np.asarray(values, dtype=np.float64) * scale
-        for index, joint in enumerate(traj.joint_names):
-            _series(recording, f"{field_name}/{part(joint)}/{part(name)}", seconds, shown[:, index],
-                    label=_legend(f"{joint} ({unit})", name, "JointTrajectory"), color=joint_color(index), width=2.0)
-    if traj.effort is not None:  # logged (robot_msgs' layout, N·m), not in the stock views: a plan rarely carries it
-        effort = np.asarray(traj.effort, dtype=np.float64)
-        for index, joint in enumerate(traj.joint_names):
-            _series(recording, f"effort/{part(joint)}/{part(name)}", seconds, effort[:, index],
-                    label=_legend(f"{joint} ({EFFORT_UNIT})", name, "JointTrajectory"), color=joint_color(index))
-    _log_limit_lines(traj, recording, seconds)
-    _log_channels(traj, name, recording, seconds)
-    _notes(recording, name, _joint_summary(traj))
+    # no URDF: V1's tabs (robot_msgs' log_joint_tabs), forgetting its auto-layout paths as `_stock` does
+    stock.log_joint_tabs(traj, name or "JointTrajectory", recording=recording)
+    paths = getattr(stock, "_PATHS", {})
+    paths.pop(id(recording), None)
+    paths.pop(id(getattr(recording, "_inner", None)), None)
+
+
+def _joint_page(traj: JointTrajectory, name: str, *, robot: Any = None, tool: Any = None, ghosts: bool = True) -> Any:
+    """V1's layout for one JointTrajectory: with ``robot`` the arm left and the tabs right, else the tabs alone."""
+    if robot is None:
+        if tool is not None:
+            raise TypeError("tool= is the tool path of robot=: pass robot= (a URDF path) too")
+        return stock.joint_tabs_blueprint(traj, name)
+    return stock.robot_blueprint(traj, name, robot=robot, tool=tool, ghosts=ghosts)
 
 
 ARM_JOINTS = ("shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint", "wrist_1_joint", "wrist_2_joint",
@@ -489,21 +368,37 @@ def pick_move(rate_hz: float = 100.0) -> JointTrajectory:
 
 
 def _joint_views(name: str) -> list[Any]:
+    """The views of a JointTrajectory among other messages (an overlay, a stream); alone it opens on `_joint_page`."""
     return [
-        _plot("/positions", "joint position (deg)", legend=False),
-        _plot("/velocities", "joint velocity (deg/s)", legend=False),
-        _plot("/accelerations", "joint acceleration (deg/s²)", legend=False),
-        _notes_view(name),
+        _plot("/positions", "q: joint position (deg)"),
+        _plot("/velocities", "qd: joint velocity (deg/s)"),
+        _plot("/accelerations", "qdd: joint acceleration (deg/s²)"),
+        _notes_view(name, f"{name} at the playhead"),
     ]
+
+
+def _sample_robot() -> dict[str, Any]:
+    # WHY ghosts off: the start / end arms are two more copies of the UR5e's meshes, and a gallery .rrd ships on the
+    # landing page under 2 MB (docs/CONTRACT.md); the live view still has the tool path and the moving arm
+    return {"robot": str(UR5E_URDF), "ghosts": False}
 
 
 register(TypeView(
     type=JointTrajectory,
-    summary=("Position, velocity and acceleration in degrees, one plot each, one colour per joint; the limits the "
-             "motion comes near as thin lines; a table of each joint's range and peaks against its limits."),
+    summary=("V1, the stock trajectory viewer: the URDF arm moving on the left, tabs on the right: q, qd, qdd, qddd (a "
+             "strip per joint in degrees with its limits), q / qd / qdd (% of each joint's limits) and TCP. No URDF: "
+             "the same tabs at full width."),
     sample=pick_move,
     views=_joint_views,
-    tags=("plot",),
+    page=_joint_page,
+    options=_sample_robot,
+    code=(
+        "import robot_msg_viz as viz\nfrom robot_msgs.trajectory import JointTrajectory\n\n"
+        'viz.show(jointTrajectory, robot="ur5e.urdf")           # the arm + tabs (tool=tcp: your tool\'s path)\n'
+        "viz.show(jointTrajectory)                               # no URDF: the tabs at full width\n"
+        'viz.save("plan.rrd", jointTrajectory, robot="ur5e.urdf")   # or a file: rerun plan.rrd'
+    ),
+    tags=("3d", "plot"),
 ))  # fmt: skip
 
 register(TypeView(

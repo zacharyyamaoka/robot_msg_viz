@@ -9,7 +9,7 @@ version = "0.1.0"
 description = "A stock Rerun viewer for every robot_msgs type: show(msg), save(path, msg) or stream them, each with a preconfigured blueprint."
 readme = "README.md"
 license = "MIT"
-license-files = ["LICENSE"]
+license-files = ["LICENSE", "src/robot_msg_viz/assets/ur5e/LICENSE.ur_description"]
 authors = [{ name = "Zach Yamaoka" }]
 requires-python = ">=3.11"
 keywords = ["robotics", "rerun", "visualization", "robot_msgs", "ros", "blueprint"]

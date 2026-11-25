@@ -82,7 +82,9 @@ def type_entries() -> list[GalleryEntry]:
         def write(path: Path, view=view, name=item.name, app_id=app_id) -> Path:
             if view.series is not None:
                 return save_series(path, view.series(), name=name, application_id=app_id)
-            return save(path, application_id=app_id, **{name: view.sample()})
+            # WHY options: some samples are shown with more than the message (a JointTrajectory on its URDF arm)
+            options = view.options() if view.options is not None else {}
+            return save(path, application_id=app_id, **options, **{name: view.sample()})
 
         out.append(GalleryEntry(
             kind="type", key=item.key, title=item.name, group=item.domain, summary=view.summary,

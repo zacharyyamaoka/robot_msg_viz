@@ -40,6 +40,11 @@ class TypeView:
     - ``series``: optional ``[(t_seconds, message), ...]`` the gallery streams instead of ``sample``
       (a JointState or an Imu reads as a signal over time, not one value).
     - ``code``: optional snippet for the gallery page; the default is ``show(<var>)``.
+    - ``page``: optional ``page(msg, name, **options) -> rrb.Blueprint``, the whole layout when the message is shown
+      alone (a dashboard built from the message itself, as JointTrajectory's tabs, whose strips carry its joints and
+      numbers); ``options`` are what `show` / `save` take besides messages (``robot=``, ``ghosts=``, ``tool=``) and the
+      type's logger takes them too. Several messages are laid out from ``views`` instead.
+    - ``options``: optional ``() -> dict``, the options the gallery shows the sample with (``{"robot": <URDF>}``).
     """
 
     type: type
@@ -49,6 +54,8 @@ class TypeView:
     series: Callable[[], list[tuple[float, Any]]] | None = None
     code: str | None = None
     tags: tuple[str, ...] = field(default_factory=tuple)
+    page: Callable[..., Any] | None = None
+    options: Callable[[], dict[str, Any]] | None = None
 
     @property
     def key(self) -> str:

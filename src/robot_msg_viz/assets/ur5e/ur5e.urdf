@@ -1,0 +1,115 @@
+<?xml version="1.0"?>
+<!--
+  Collision-only UR5e fixture expanded from Universal Robots' ur_description.
+  Meshes and transforms come from the local universal_robots package. Keeping
+  only the serial chain and collision geometry makes this fixture portable.
+-->
+<robot name="ur5e">
+  <link name="base_link_ur"/>
+
+  <link name="base_link_inertia">
+    <collision name="base_collision">
+      <origin xyz="0 0 0" rpy="0 0 3.141592653589793"/>
+      <geometry><mesh filename="meshes/base.stl"/></geometry>
+    </collision>
+  </link>
+  <joint name="base_link_ur_base_link_inertia" type="fixed">
+    <parent link="base_link_ur"/>
+    <child link="base_link_inertia"/>
+    <origin xyz="0 0 0" rpy="0 0 3.141592653589793"/>
+  </joint>
+
+  <link name="shoulder_link">
+    <collision name="shoulder_collision">
+      <origin xyz="0 0 0" rpy="0 0 3.141592653589793"/>
+      <geometry><mesh filename="meshes/shoulder.stl"/></geometry>
+    </collision>
+  </link>
+  <joint name="shoulder_pan_joint" type="revolute">
+    <parent link="base_link_inertia"/>
+    <child link="shoulder_link"/>
+    <origin xyz="0 0 0.1625"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-3.141592653589793" upper="3.141592653589793"
+           effort="150" velocity="3.141592653589793"/>
+  </joint>
+
+  <link name="upper_arm_link">
+    <collision name="upper_arm_collision">
+      <origin xyz="0 0 0.138"
+              rpy="1.5707963267948966 0 -1.5707963267948966"/>
+      <geometry><mesh filename="meshes/upperarm.stl"/></geometry>
+    </collision>
+  </link>
+  <joint name="shoulder_lift_joint" type="revolute">
+    <parent link="shoulder_link"/>
+    <child link="upper_arm_link"/>
+    <origin xyz="0 0 0" rpy="1.570796327 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-3.141592653589793" upper="3.141592653589793"
+           effort="150" velocity="3.141592653589793"/>
+  </joint>
+
+  <link name="forearm_link">
+    <collision name="forearm_collision">
+      <origin xyz="0 0 0.007"
+              rpy="1.5707963267948966 0 -1.5707963267948966"/>
+      <geometry><mesh filename="meshes/forearm.stl"/></geometry>
+    </collision>
+  </link>
+  <joint name="elbow_joint" type="revolute">
+    <parent link="upper_arm_link"/>
+    <child link="forearm_link"/>
+    <origin xyz="-0.425 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-3.141592653589793" upper="3.141592653589793"
+           effort="150" velocity="3.141592653589793"/>
+  </joint>
+
+  <link name="wrist_1_link">
+    <collision name="wrist_1_collision">
+      <origin xyz="0 0 -0.127" rpy="1.5707963267948966 0 0"/>
+      <geometry><mesh filename="meshes/wrist1.stl"/></geometry>
+    </collision>
+  </link>
+  <joint name="wrist_1_joint" type="revolute">
+    <parent link="forearm_link"/>
+    <child link="wrist_1_link"/>
+    <origin xyz="-0.3922 0 0.1333"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-4.71238898038469" upper="1.5707963267948966"
+           effort="28" velocity="3.141592653589793"/>
+  </joint>
+
+  <link name="wrist_2_link">
+    <collision name="wrist_2_collision">
+      <origin xyz="0 0 -0.0997"/>
+      <geometry><mesh filename="meshes/wrist2.stl"/></geometry>
+    </collision>
+  </link>
+  <joint name="wrist_2_joint" type="revolute">
+    <parent link="wrist_1_link"/>
+    <child link="wrist_2_link"/>
+    <origin xyz="0 -0.0997 -2.044881182297852e-11"
+            rpy="1.570796327 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-4.71238898038469" upper="1.5707963267948966"
+           effort="28" velocity="3.141592653589793"/>
+  </joint>
+
+  <link name="wrist_3_link">
+    <collision name="wrist_3_collision">
+      <origin xyz="0 0 -0.0989" rpy="1.5707963267948966 0 0"/>
+      <geometry><mesh filename="meshes/wrist3.stl"/></geometry>
+    </collision>
+  </link>
+  <joint name="wrist_3_joint" type="revolute">
+    <parent link="wrist_2_link"/>
+    <child link="wrist_3_link"/>
+    <origin xyz="0 0.09959999999999999 -2.042830148012698e-11"
+            rpy="1.570796326589793 3.141592653589793 3.141592653589793"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-3.141592653589793" upper="3.141592653589793"
+           effort="28" velocity="3.141592653589793"/>
+  </joint>
+</robot>

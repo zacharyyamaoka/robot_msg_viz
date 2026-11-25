@@ -81,8 +81,18 @@ module overrides a type only where the stock one is missing or not enough. Examp
 - a PointCloud coloured by height;
 - a CameraInfo as a frustum.
 
-For a JointTrajectory with its arm, use robot_msgs' URDF viewer directly (`traj.show(robot="ur5e.urdf")`, or
-`viz.log(traj, "plan", recording=rec, robot=urdf)`, which passes `robot=` through to it).
+A JointTrajectory opens in robot_msgs' stock trajectory viewer (V1, Zach's pick): give it the robot's URDF and the
+arm moves on the left half, with tabs on the right half (q, qd, qdd, qddd in degrees, q / qd / qdd as % of each joint's
+limits, TCP). Without a URDF it opens on the same tabs at full width.
+
+```python
+viz.show(traj, robot="ur5e.urdf")             # tool=tcp for your tool's path, ghosts=False without the start/end arms
+viz.show(traj)                                # the tabs alone
+viz.log(traj, "plan", recording=rec, robot=urdf); viz.blueprint(plan=traj, robot=urdf)   # into your own recording
+```
+
+The gallery's sample is a pick on a real UR5e (`robot_msg_viz/assets/ur5e`, Universal Robots' ur_description,
+BSD-3-Clause, licence beside it).
 
 ## Adding a view
 

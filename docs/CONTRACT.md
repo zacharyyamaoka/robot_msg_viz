@@ -50,8 +50,14 @@ register(TypeView(
     series=None,                   # or lambda: [(t, msg), ...] when the type reads as a signal over time
     code=None,                     # optional gallery snippet (default: viz.show(x) / viz.save(...))
     tags=("3d",),                  # optional: "3d", "2d", "plot", "text", "stream"
+    page=None,                     # optional: lambda msg, name, **options: rrb.Blueprint, the whole layout when the
+                                   #   message is shown alone (JointTrajectory: robot_msgs' stock trajectory viewer)
+    options=None,                  # optional: lambda: {"robot": urdf}, what the gallery shows the sample with
 ))
 ```
+
+`show` / `save` / `blueprint` / `recording` take `robot=`, `ghosts=` (and then `tool=`) as robot_msgs' `show` does;
+they reach the type's `page` and its logger, and need exactly one message.
 
 ### Gates (tests/test_contract.py)
 
