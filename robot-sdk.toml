@@ -10,4 +10,5 @@ use_when = "Looking at any robot_msgs message in Rerun, live or from a file. **N
 
 [links]
 github = "https://github.com/zacharyyamaoka/robot_msg_viz"
+site = "https://zacharyyamaoka.github.io/robot_msg_viz/"
 pypi = "https://pypi.org/project/robot-msg-viz/"
