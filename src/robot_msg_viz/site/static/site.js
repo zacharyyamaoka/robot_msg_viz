@@ -182,7 +182,9 @@
     var rrdUrl = new URL(player.dataset.rrd, location.href).href;
 
     function viewerUrl(viewer) {
-      var url = viewer + (viewer.indexOf("?") === -1 ? "?" : "&") + "url=" + encodeURIComponent(rrdUrl);
+      // WHY persist=0: the hosted viewer otherwise remembers each app id's layout across visits, so an entry whose
+      // blueprint changed would open in the stale one (robot_msg_viz.launch.web_url does the same).
+      var url = viewer + (viewer.indexOf("?") === -1 ? "?" : "&") + "url=" + encodeURIComponent(rrdUrl) + "&persist=0";
       // A renderer pick on this page (?renderer=webgl) passes through: headless browsers have no WebGPU.
       var renderer = new URLSearchParams(location.search).get("renderer");
       return renderer ? url + "&renderer=" + encodeURIComponent(renderer) : url;

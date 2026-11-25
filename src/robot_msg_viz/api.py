@@ -74,10 +74,10 @@ def save(path: str | Path, *messages: Any, application_id: str = APPLICATION_ID,
     path.parent.mkdir(parents=True, exist_ok=True)
     rec = rr.RecordingStream(application_id)
     bp = blueprint(*messages, **named)
-    rec.save(str(path), default_blueprint=bp)
-    # WHY also send it: default_blueprint= alone is make_active=false, so a viewer that remembers a layout
-    # for this app id keeps the old one (prior-art sweep 2026-11-24, claim 57); sending it makes it win.
-    rec.send_blueprint(bp)
+    rec.save(str(path))
+    # WHY send_blueprint, not save(default_blueprint=): that one is make_active=false, so a viewer that remembers a
+    # layout for this app id keeps the old one (prior-art sweep 2026-11-24, claim 57); doing both stores it twice.
+    rec.send_blueprint(bp, make_active=True, make_default=True)
     for name, msg in _named(messages, named):
         log(msg, name, recording=rec)
     rec.flush()
@@ -99,8 +99,8 @@ def save_series(
     label = name or type(first).__name__
     rec = rr.RecordingStream(application_id)
     bp = arrange(views_for(first, label), timed=True)
-    rec.save(str(path), default_blueprint=bp)
-    rec.send_blueprint(bp)  # WHY: as in save(), so the embedded layout wins over a remembered one
+    rec.save(str(path))
+    rec.send_blueprint(bp, make_active=True, make_default=True)  # WHY: as in save()
     timed = Timed(rec)
     for t, msg in series:
         rec.set_time(TIMELINE, duration=float(t))
@@ -158,7 +158,7 @@ class Stream:
         self._t0_stamp: float | None = None
         if save is not None:
             Path(save).parent.mkdir(parents=True, exist_ok=True)
-            self.rec.save(str(save), default_blueprint=blueprint)
+            self.rec.save(str(save))
         if spawn or web:
             _open(self.rec, blueprint or arrange([], timed=True), web=web)
         if blueprint is not None:

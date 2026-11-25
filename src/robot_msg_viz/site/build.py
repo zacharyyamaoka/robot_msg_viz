@@ -490,6 +490,16 @@ def entry_page(item: Item, items: list[Item], version: str) -> str:
         )  # fmt: skip
     else:
         meta = f"{esc(entry.group)} · a dashboard from <code>{esc(entry.source)}</code>"
+        # WHY both lines (Zach, 2026-11-24): adapters bring any data in as robot_msgs, viewers draw it; Rerun today,
+        # the rest on the roadmap, so the page says which is which instead of implying more.
+        viewer_chips = "".join(
+            f'<span class="chip">{esc(name)}</span>' if status == "supported"
+            else f'<span class="chip off" title="on the roadmap">{esc(name)} · roadmap</span>'
+            for name, status in entry.viewers
+        )
+        adapter_chips = "".join(f'<span class="chip">{esc(name)}</span>' for name in entry.adapters)
+        meta += (f'</p><p class="meta-line">Viewers <span class="chips">{viewer_chips}</span>'
+                 f' · Takes <span class="chips">{adapter_chips}</span>')
         related_h = "Types it draws"
         related = (
             '<p class="chips">' + "".join(type_chip(k, by_key, root) for k in entry.consumes) + "</p>"

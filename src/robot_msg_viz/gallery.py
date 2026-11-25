@@ -30,6 +30,7 @@ class GalleryEntry:
     - ``write``: writes the sample recording (blueprint inside) to the path it is given.
     - ``consumes``: the robot_msgs type keys it draws (links a use case to its types).
     - ``source``: the package that provides it (for the page and the ruler).
+    - ``viewers`` / ``adapters``: where it can be drawn and what it takes in (the use-case page lists both).
     """
 
     kind: str
@@ -44,6 +45,10 @@ class GalleryEntry:
     source: str = "robot_msg_viz"
     timed: bool = False
     tags: tuple[str, ...] = field(default_factory=tuple)
+    # (viewer title, "supported" | "roadmap"): where the entry can be drawn; a type here is drawn in Rerun.
+    viewers: tuple[tuple[str, str], ...] = (("Rerun", "supported"),)
+    # the input adapters it takes (a use case: robot_msgs plus whatever its package registers)
+    adapters: tuple[str, ...] = ("robot_msgs",)
 
     @property
     def slug(self) -> str:

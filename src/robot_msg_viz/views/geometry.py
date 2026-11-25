@@ -57,7 +57,9 @@ AXIS_LENGTH = 0.1  # metres: robot_msgs' stock triad, so our frames match msg.sh
 AXES = ((220, 50, 60), (40, 160, 70), (50, 105, 230))  # x, y, z: red, green, blue
 FAINT_AXES = ((240, 170, 175), (165, 215, 175), (170, 190, 240))  # the same, washed out: "before"
 GREY = (130, 135, 145)
-INK = (70, 75, 90)  # label anchors, a plain vector, the rotation axis: dark and neutral
+# WHY a light neutral: a label chip takes this colour as its background; the dark ink of the first pass vanished on
+# the dark theme the gallery shoots in (2026-11-24), a light chip with dark text reads in both themes.
+INK = (185, 190, 200)  # label anchors, a plain vector, the rotation axis: neutral
 LINEAR = (235, 130, 30)  # orange: linear velocity / acceleration, force
 ANGULAR = (150, 80, 210)  # purple: angular velocity / acceleration, torque (never blue: that is z)
 MASS = (95, 140, 175, 70)  # the inertia ellipsoid: a calm translucent slate

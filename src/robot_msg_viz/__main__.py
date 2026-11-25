@@ -32,6 +32,7 @@ def manifest(entry: GalleryEntry, rrd: str | None) -> dict:
         "kind": entry.kind, "key": entry.key, "slug": entry.slug, "title": entry.title, "group": entry.group,
         "summary": entry.summary, "supported": entry.supported, "code": entry.code, "consumes": list(entry.consumes),
         "source": entry.source, "timed": entry.timed, "tags": list(entry.tags), "rrd": rrd,
+        "viewers": [list(v) for v in entry.viewers], "adapters": list(entry.adapters),
     }  # fmt: skip
 
 
