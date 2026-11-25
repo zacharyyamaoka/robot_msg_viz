@@ -498,8 +498,8 @@ def entry_page(item: Item, items: list[Item], version: str) -> str:
             for name, status in entry.viewers
         )
         adapter_chips = "".join(f'<span class="chip">{esc(name)}</span>' for name in entry.adapters)
-        meta += (f'</p><p class="meta-line">Viewers <span class="chips">{viewer_chips}</span>'
-                 f' · Takes <span class="chips">{adapter_chips}</span>')
+        meta += (f'</p><p class="meta-line">Viewers <span class="chips">{viewer_chips}</span></p>'
+                 f'<p class="meta-line">Takes (adapters) <span class="chips">{adapter_chips}</span>')
         related_h = "Types it draws"
         related = (
             '<p class="chips">' + "".join(type_chip(k, by_key, root) for k in entry.consumes) + "</p>"
