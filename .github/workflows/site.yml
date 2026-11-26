@@ -5,11 +5,12 @@
 #   shooting 53 views in a headless WebGL viewer takes ~10 min and software rendering on a runner; the recordings come
 #   from code, so they are rebuilt from the pushed commit, and tests/test_site_public.py fails when a supported type has
 #   no committed still.
-# WHY --no-plugins: the public page shows robot_msg_viz's own types only. Plugins add use cases through an entry point,
-#   and one of them (robot_dashboards) is private; nothing it ships may reach this page. It is not installed here
-#   either; the build flag makes that a rule, not an accident, and the check step below greps the result.
+# WHY plugins are installed (2026-11-25): robot_dashboards is public now, so its use cases are listed on this page. Its
+#   stills and ~12 s hero are committed in ITS repo (website/media/shots), so CI clones it at the pinned commit and
+#   merges its stills into the shots folder; this repo still commits type stills only (tests/test_site_public.py).
+#   The check step below still greps the result for local paths and e-mail addresses.
 # WHY --no-sources and robot_msgs from its GitHub commit: pyproject's [tool.uv.sources] points at /home/bam checkouts
-#   and its default "site" group pulls robot-dashboards (private); neither exists on a runner. `uv pip install` reads
+#   and its default "site" group pulls robot-dashboards from a checkout; neither exists on a runner. `uv pip install` reads
 #   no dependency groups. robot-msgs 0.3.1 is not on PyPI yet and the stock JointTrajectory view needs its
 #   log_joint_tabs (e5f375d); pinned to a commit so a robot_msgs push cannot change this run. Back to PyPI once a
 #   robot-msgs release has it.
@@ -32,19 +33,24 @@ jobs:
       - run: >-
           uv pip install --no-sources -e ".[test]"
           "robot-msgs[rerun] @ git+https://github.com/zacharyyamaoka/robot_msgs@e5f375dd98e3b3cd3066f284c91db9ef63ea48a7"
+          "robot-dashboards @ git+https://github.com/zacharyyamaoka/robot_dashboards@8e3a0f2"
+      - name: stills for the use cases
+        run: |
+          git clone -q https://github.com/zacharyyamaoka/robot_dashboards "$RUNNER_TEMP/rd"
+          git -C "$RUNNER_TEMP/rd" checkout -q 8e3a0f2
+          mkdir _shots && cp website/media/shots/* "$RUNNER_TEMP"/rd/website/media/shots/* _shots/
       - name: test
         run: .venv/bin/python -m pytest -q
         env:
           MPLBACKEND: Agg
       - name: build
         run: >-
-          .venv/bin/python -m robot_msg_viz.site build _site --no-plugins
-          --shots website/media/shots --hero website/media/hero.mp4
+          .venv/bin/python -m robot_msg_viz.site build _site 
+          --shots _shots --hero website/media/hero.mp4
         env:
           MPLBACKEND: Agg
       - name: nothing private in the page
         run: |
-          if [ -d _site/use-cases ]; then echo "::error::the public page has use-case pages"; exit 1; fi
           leaks=$(grep -rIlE '/home/|zach_brain|\.claude\b|[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+\.[A-Za-z0-9.-]*[a-z]{2,}' \
                   --include='*.html' --include='*.json' --include='*.js' --include='*.css' _site || true)
           if [ -n "$leaks" ]; then echo "::error::private text in $leaks"; exit 1; fi

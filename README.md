@@ -38,8 +38,8 @@ nothing of their own to draw (`Header`, `JointTolerance`, the step conditions, â
 | compare | 4 of 10 (Comparison, ErrorStats, Outcome, Violation; the rest is traj_compare's) |
 
 Use-case dashboards (object detection, grasping, trajectory generation, â€¦) come from plugins such as the sibling
-package robot_dashboards (private for now, with its own landing page); the public landing page lists robot_msg_viz's
-own types.
+package [robot_dashboards](https://github.com/zacharyyamaoka/robot_dashboards) (public, with its own landing page at
+https://zacharyyamaoka.github.io/robot_dashboards/); this landing page lists them under its Use cases tab.
 
 ## Install
 
