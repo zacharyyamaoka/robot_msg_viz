@@ -10,6 +10,10 @@
 
 The Image and PointCloud samples are one tabletop scene seen by the CameraInfo sample's camera, ray-cast here in
 numpy (deterministic, no files, no network), so the three gallery cards show the same table.
+
+Not supported, on purpose: CameraSettings (exposure, gain, white balance, gamma, focus, frame rate) is the
+configuration a camera captured with, with nothing of its own to draw (docs/CONTRACT.md: never fake a view); it keeps
+the repr-as-text fallback, and robot_viz_agent lists it under configuration in its unsupported.json.
 """  # noqa: E501
 
 from __future__ import annotations

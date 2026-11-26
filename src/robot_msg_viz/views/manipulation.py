@@ -9,6 +9,11 @@
   Cartesian pose also draws its tool frame, labelled, in the 3D scene.
 - AllowedCollisionMatrix: the matrix as a picture, each skipped pair coloured by its reason (class
   colours through rr.AnnotationContext, so hovering a cell names it), and a card listing the pairs.
+- CollisionElement: every shape of the element, shaded, in the colour of its (motion, compliance) pair, its
+  margin as a faint inflated outline, a plane as a translucent patch with an arrow out of its free side (a plane
+  element is a half-space, solid opposite its normal); one label with its source, tags and margin.
+- CollisionScene: every element so, labelled, beside a card: the elements by source and tag, the colour key, the
+  robot state in degrees and the allowed-collision pairs.
 
 Not supported, on purpose:
 
@@ -18,6 +23,9 @@ Not supported, on purpose:
 WHY the gripper glyph opens along x and approaches along +z, 40 mm deep: robot_msgs' Viser viewer
 draws the same glyph (robot_msgs.viz.viser._gripper), so a grasp reads the same in both viewers.
 The fingers are a drawing of the widths, not the robot's real gripper geometry.
+
+WHY the collision colours are robot_msgs.viz.viser's ELEMENT_RGB, copied (2026-11-26): a scene should read the
+same in its Viser quick look and here, and importing that module pulls in viser, which this package does not need.
 
 WHY overrides for GraspPose, Waypoint and WaypointAction (2026-11-24): the stock logger draws a 10 cm
 frame and a text label for a grasp (no jaws, no approach), an unlabelled frame for a waypoint, and a
@@ -38,12 +46,23 @@ import numpy as np
 import rerun as rr
 import rerun.blueprint as rrb
 from robot_msgs.geometry import Pose, PoseStamped, Vector3
-from robot_msgs.manipulation import AllowedCollisionMatrix, GraspPose, NamedPose, Waypoint, WaypointAction
+from robot_msgs.manipulation import (
+    AllowedCollisionMatrix,
+    CollisionElement,
+    CollisionScene,
+    GraspPose,
+    NamedPose,
+    Waypoint,
+    WaypointAction,
+)
+from robot_msgs.sensor import JointState
+from robot_msgs.shape import Mesh, Plane, SolidPrimitive
 from robot_msgs.std import Header
 
 from robot_msg_viz._engine import log, part
 from robot_msg_viz.registry import TypeView, register
 from robot_msg_viz.views._common import DEG, origin_triad
+from robot_msg_viz.views.shape import shaded
 
 FINGER_DEPTH = 0.04  # m: finger length in the glyph (robot_msgs.viz.viser._gripper's)
 APPROACH = 0.06  # m: length of the approach arrow behind the palm
@@ -521,4 +540,216 @@ register(TypeView(
     sample=sample_acm,
     views=acm_views,
     tags=("2d", "text"),
+))  # fmt: skip
+
+
+# ── CollisionElement / CollisionScene ────────────────────────────────────────
+
+# (motion, compliance) -> colour: robot_msgs.viz.viser.ELEMENT_RGB (see the module docstring).
+ELEMENT_RGB = {
+    ("fixed", "rigid"): (100, 116, 139),
+    ("fixed", "deformable"): (20, 184, 166),
+    ("moving", "rigid"): (99, 102, 241),
+    ("moving", "deformable"): (236, 72, 153),
+}
+ELEMENT_WORDS = {("fixed", "rigid"): "slate", ("fixed", "deformable"): "teal", ("moving", "rigid"): "indigo",
+                 ("moving", "deformable"): "pink"}  # fmt: skip
+PLANE_ALPHA = 70  # a plane patch is translucent, so what stands on it stays visible
+PLANE_HALF = 0.5  # m: half-width of a lone element's plane patch (a scene fits it to its other elements)
+
+
+def element_text(element: CollisionElement) -> str:
+    """Name, source and tags in plain words; the margin and a non-default contact policy only when set."""
+    name = element.label or element.id
+    text = f"{name} · {element.source}" + (f" ({element.link})" if element.link else "")
+    text += f" · {element.motion}, {element.compliance}"
+    if element.margin:
+        text += f" · margin {mm(element.margin)}"
+    if element.contact != "avoid":
+        text += f" · contact {element.contact}"
+    return text
+
+
+def plane_patch(plane: Plane, place: np.ndarray, half: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """A square of `plane` (in the element frame `place`, 4×4), `half` wide, around its point nearest the origin:
+    corners in the scene frame, its centre and its unit normal there."""
+    normal = np.array(plane.coef[:3], dtype=float)
+    length = float(np.linalg.norm(normal))
+    normal /= length
+    centre = -float(plane.coef[3]) / length * normal
+    u = np.cross(normal, [1.0, 0.0, 0.0] if abs(normal[0]) < 0.9 else [0.0, 1.0, 0.0])
+    u /= np.linalg.norm(u)
+    v = np.cross(normal, u)
+    corners = np.array([centre + a * half * u + b * half * v for a, b in ((-1, -1), (1, -1), (1, 1), (-1, 1))])
+    rotation, translation = place[:3, :3], place[:3, 3]
+    return corners @ rotation.T + translation, rotation @ centre + translation, rotation @ normal
+
+
+def solid_mesh(shape: SolidPrimitive | Mesh) -> Mesh:
+    return shape.to_mesh(48) if isinstance(shape, SolidPrimitive) else shape
+
+
+def inflated_outline(shape: SolidPrimitive | Mesh, margin: float) -> np.ndarray | None:
+    """The 12 edges of the shape's bounding box grown by `margin`, in the shape frame (None for a bare margin)."""
+    if margin <= 0.0:
+        return None
+    vertices = np.asarray(solid_mesh(shape).vertices)
+    low, high = vertices.min(axis=0) - margin, vertices.max(axis=0) + margin
+    corners = np.array([[x, y, z] for x in (low[0], high[0]) for y in (low[1], high[1]) for z in (low[2], high[2])])
+    edges = [(0, 1), (2, 3), (4, 5), (6, 7), (0, 2), (1, 3), (4, 6), (5, 7), (0, 4), (1, 5), (2, 6), (3, 7)]
+    return np.array([[corners[a], corners[b]] for a, b in edges])
+
+
+def scene_extent(elements) -> tuple[np.ndarray, np.ndarray] | None:
+    """The scene-frame bounds of every solid shape (planes excluded: they are infinite)."""
+    points = []
+    for element in elements:
+        for shape, place in element.shapes():
+            if not isinstance(shape, Plane):
+                points.append(np.asarray(solid_mesh(shape).vertices) @ place[:3, :3].T + place[:3, 3])
+    if not points:
+        return None
+    stacked = np.vstack(points)
+    return stacked.min(axis=0), stacked.max(axis=0)
+
+
+def draw_element(recording: rr.RecordingStream, base: str, element: CollisionElement, plane_half: float) -> None:
+    rgb = ELEMENT_RGB[(element.motion, element.compliance)]
+    top = None
+    for k, (shape, place) in enumerate(element.shapes()):
+        path = f"{base}/shape_{k}"
+        if isinstance(shape, Plane):
+            corners, centre, normal = plane_patch(shape, place, plane_half)
+            recording.log(path, rr.Mesh3D(vertex_positions=corners, triangle_indices=[[0, 1, 2], [0, 2, 3]],
+                                          albedo_factor=(*rgb, PLANE_ALPHA),
+                                          face_rendering=rr.components.MeshFaceRendering.DoubleSided),
+                          static=True)  # fmt: skip
+            recording.log(f"{path}/edge", rr.LineStrips3D([np.vstack([corners, corners[:1]])], radii=-1.0,
+                                                          colors=[rgb]), static=True)  # fmt: skip
+            # the free side: a half-space is solid opposite its normal
+            recording.log(f"{path}/free_side", rr.Arrows3D(origins=[centre], vectors=[0.15 * plane_half * normal],
+                                                           radii=0.003, colors=[rgb]), static=True)  # fmt: skip
+            anchor = corners[2]
+        else:
+            mesh = solid_mesh(shape)
+            vertices = np.asarray(mesh.vertices) @ place[:3, :3].T + place[:3, 3]
+            recording.log(path, rr.Mesh3D(**shaded(vertices, np.asarray(mesh.triangles)), albedo_factor=(*rgb, 255)),
+                          static=True)  # fmt: skip
+            outline = inflated_outline(shape, element.margin)
+            if outline is not None:
+                world = outline @ place[:3, :3].T + place[:3, 3]
+                recording.log(f"{path}/margin", rr.LineStrips3D(world, radii=-0.75, colors=[MUTED]), static=True)
+            peak = vertices[np.argmax(vertices[:, 2])]
+            anchor = peak + [0.0, 0.0, 0.02]
+        top = anchor if top is None or anchor[2] > top[2] else top
+    if top is None:  # an element with no shapes: its frame alone, so it is still there to see
+        top = element.pose.position.as_array()
+        recording.log(f"{base}/frame", rr.Transform3D(translation=top, quaternion=xyzw(element.pose)),
+                      rr.TransformAxes3D(0.05), static=True)  # fmt: skip
+    label(recording, f"{base}/label", top, element_text(element), rgb)
+
+
+@log.register
+def _(element: CollisionElement, name: str | None = None, *, recording: rr.RecordingStream) -> None:
+    extent = scene_extent([element])
+    half = PLANE_HALF if extent is None else max(PLANE_HALF, float(np.max(extent[1] - extent[0])))
+    draw_element(recording, f"world/{part(name or element.id)}", element, half)
+    origin_triad(recording, 0.1)
+
+
+def scene_card(scene: CollisionScene) -> str:
+    lines = [f"### {scene.name or 'collision scene'}", ""]
+    if scene.why:
+        lines += [scene.why, ""]
+    lines += [f"In frame `{scene.header.frame_id}` · {len(scene.elements)} elements", ""]
+    if not scene.elements:
+        lines += ["Empty: nothing to avoid.", ""]
+    for source in ("scene", "object", "self"):
+        members = [e for e in scene.elements if e.source == source]
+        if members:
+            lines.append(f"- **{source}**: " + ", ".join(f"{e.label or e.id} ({e.motion}, {e.compliance})"
+                                                         for e in members))  # fmt: skip
+    lines += ["", "Colour: " + ", ".join(f"{ELEMENT_WORDS[k]} = {k[0]} {k[1]}" for k in ELEMENT_RGB) + "."]
+    state: JointState | None = scene.robot_state
+    if state is not None and state.position is not None and len(state.name):
+        joints = ", ".join(f"{n} {float(p) * DEG:.4g}°" for n, p in zip(state.name, state.position, strict=False))
+        lines += ["", f"Robot posed at: {joints}"]
+    if scene.acm is not None:
+        given = {(a, b): reason for a, b, reason in scene.acm.reasons}
+        skipped = [f"{a} – {b}" + (f" ({given[(a, b)]})" if (a, b) in given else "") for a, b in scene.acm.allowed_pairs()]
+        lines += ["", f"Not checked ({len(skipped)}): " + (", ".join(skipped) if skipped else "none")]
+    return "\n".join(lines)
+
+
+@log.register
+def _(scene: CollisionScene, name: str | None = None, *, recording: rr.RecordingStream) -> None:
+    key = part(name or scene.name or "CollisionScene")
+    extent = scene_extent(scene.elements)
+    half = PLANE_HALF if extent is None else 0.75 * float(np.max(extent[1] - extent[0]))
+    for element in scene.elements:
+        draw_element(recording, f"world/{key}/{part(element.id)}", element, half)
+    if not scene.elements:
+        label(recording, f"world/{key}/empty", [0.0, 0.0, 0.0], "empty collision scene")
+    origin_triad(recording, 0.1)
+    recording.log(f"notes/{key}", rr.TextDocument(scene_card(scene), media_type="text/markdown"), static=True)
+
+
+def scene_views(name: str) -> list[rrb.View]:
+    return [rrb.Spatial3DView(origin="/world", name="world"),
+            rrb.TextDocumentView(origin=f"/notes/{part(name)}", name=f"{name} elements")]  # fmt: skip
+
+
+def sample_element() -> CollisionElement:
+    """A glove the detector boxed on the belt: moving, deformable, inflated 10 mm."""
+    return CollisionElement(
+        id="glove", source="object", pose=Pose.from_xyz_rpy(0.55, 0.05, 0.015, 0.0, 0.0, 0.4),
+        primitives=(SolidPrimitive.box(0.20, 0.10, 0.03),), primitive_poses=(Pose.identity(),),
+        motion="moving", compliance="deformable", margin=0.01, label="glove", why="detector box, 5 mm noise",
+    )  # fmt: skip
+
+
+def sample_scene() -> CollisionScene:
+    """BAM's cell, v1: a floor, the conveyor, a bin, two items on the belt and the robot's forearm at q."""
+    def box(element_id, x, y, z, size, **tags):
+        return CollisionElement(id=element_id, source=tags.pop("source", "scene"), pose=Pose.from_xyz_rpy(x, y, z, 0, 0, 0),
+                                primitives=(SolidPrimitive.box(*size),), primitive_poses=(Pose.identity(),), **tags)  # fmt: skip
+
+    return CollisionScene(
+        name="conveyor cell",
+        elements=(
+            CollisionElement(id="floor", source="scene", planes=(Plane.from_point_normal((0, 0, 0), (0, 0, 1)),),
+                             plane_poses=(Pose.identity(),), label="concrete floor"),
+            box("conveyor", 0.6, 0.0, 0.35, (0.5, 1.6, 0.7), margin=0.005),
+            box("bin", 0.0, -0.6, 0.25, (0.4, 0.3, 0.5), label="sorting bin"),
+            CollisionElement(id="bottle", source="object", pose=Pose.from_xyz_rpy(0.55, 0.2, 0.735, math.pi / 2, 0, 0.3),
+                             primitives=(SolidPrimitive.cylinder(0.24, 0.035),), primitive_poses=(Pose.identity(),),
+                             motion="moving", compliance="deformable", margin=0.01, label="bottle"),
+            box("glove", 0.62, -0.15, 0.715, (0.2, 0.1, 0.03), source="object", motion="moving",
+                compliance="deformable", margin=0.01, label="glove"),
+            CollisionElement(id="forearm_link", source="self", link="forearm_link",
+                             pose=Pose.from_xyz_rpy(0.15, 0.0, 1.05, 0, 1.2, 0),
+                             primitives=(SolidPrimitive.cylinder(0.39, 0.045),), primitive_poses=(Pose.identity(),),
+                             motion="moving", label="forearm"),
+        ),
+        robot_state=JointState(name=("shoulder", "elbow"), position=[0.1, -1.2]),
+        acm=AllowedCollisionMatrix.from_pairs(("floor", "conveyor", "bin", "forearm_link"),
+                                              [("floor", "conveyor", "Adjacent"), ("floor", "bin", "Adjacent")]),
+        why="v1: the static cell, the detected items, the robot at q",
+    )  # fmt: skip
+
+
+register(TypeView(
+    type=CollisionElement,
+    summary="The element's shapes, shaded in its motion/compliance colour, its margin as a faint outline; source and tags in the label.",
+    sample=sample_element,
+    views=world,
+    tags=("3d",),
+))  # fmt: skip
+
+register(TypeView(
+    type=CollisionScene,
+    summary="Every collision element coloured by motion and compliance, labelled, beside a card of the elements, the robot state in degrees and the ACM.",
+    sample=sample_scene,
+    views=scene_views,
+    tags=("3d", "text"),
 ))  # fmt: skip

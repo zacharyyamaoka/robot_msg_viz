@@ -26,7 +26,7 @@ dependencies = [
     # (one stock logger per type, grown, never a second copy); this package adds the views,
     # samples, streaming and the gallery on top. >=0.4.0: the recorded streams and the dataset nouns (Recording, Run,
     # Dataset, RunComparison, DatasetComparison) the stream and run views draw.
-    "robot-msgs[rerun]>=0.4.0",
+    "robot-msgs[rerun]>=0.6.0",  # 0.6.0: robot_msgs.fiducial (views/fiducial.py); 0.5.0: CollisionScene
     # WHY pinned exactly, the same pin as robot_msgs and traj_compare: an .rrd must be opened by a
     # viewer at least as new as the SDK that wrote it, and the gallery links that one viewer version.
     "rerun-sdk==0.40.0",
