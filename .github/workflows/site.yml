@@ -9,9 +9,12 @@
 #   stills and ~12 s hero are committed in ITS repo (website/media/shots), so CI clones it at the pinned commit and
 #   merges its stills into the shots folder; this repo still commits type stills only (tests/test_site_public.py).
 #   The check step below still greps the result for local paths and e-mail addresses.
-# WHY --no-sources (robot-msgs>=0.3.2 comes from PyPI): pyproject's [tool.uv.sources] points at /home/bam checkouts
+# WHY --no-sources and robot_msgs from its GitHub commit: pyproject's [tool.uv.sources] points at /home/bam checkouts
 #   and its default "site" group pulls robot-dashboards from a checkout; neither exists on a runner. `uv pip install` reads
-#   no dependency groups. The stock JointTrajectory view needs robot-msgs' log_joint_tabs (in 0.3.2).
+#   no dependency groups. robot_msgs from the public commit 7f08d8a until robot-msgs 0.4.0 is on PyPI: the stream views
+#   (ServoState/ServoCommand/Imu/Wrench/ImageTrajectory) and the dataset nouns (Recording, Run, Dataset, RunComparison,
+#   DatasetComparison) need its 0.4.0 types; pinned to a commit so a robot_msgs push cannot change this run. Back to
+#   "robot-msgs[rerun]>=0.4.0" from PyPI once that release is out.
 name: site
 on:
   push:
@@ -30,7 +33,7 @@ jobs:
       - run: uv venv --python 3.12
       - run: >-
           uv pip install --no-sources -e ".[test]"
-          "robot-msgs[rerun]>=0.3.2"
+          "robot-msgs[rerun] @ git+https://github.com/zacharyyamaoka/robot_msgs@7f08d8a1bdb8ded54ccc24a40ac75cd12f1a91ce"
           "robot-dashboards @ git+https://github.com/zacharyyamaoka/robot_dashboards@8e3a0f2"
       - name: stills for the use cases
         run: |

@@ -21,7 +21,7 @@ viz.blueprint(image, detections)          # the stock layout, for a recording of
 ```
 
 Robotics viewers mostly draw the same things again and again. Rerun and Foxglove let you build any viewer, but neither
-ships a stock one per message type with sample data. This package does: **53 of robot_msgs' 68 types** have a curated
+ships a stock one per message type with sample data. This package does: **68 of robot_msgs' 83 types** have a curated
 view today, each with a sample, a screenshot and an Open link. The other 15 are configuration or parameters with
 nothing of their own to draw (`Header`, `JointTolerance`, the step conditions, …). They are listed, never hidden.
 
@@ -32,10 +32,10 @@ nothing of their own to draw (`Header`, `JointTolerance`, the step conditions, �
 | shape | 3 of 4 (MeshResource needs its mesh file) |
 | sensor | 5 of 5 (JointState, Image, CameraInfo, PointCloud, Imu) |
 | vision | 8 of 8 |
-| trajectory | 8 of 8 |
+| trajectory | 18 of 18 (the recorded streams too: servo state and command, IMU, wrench, camera) |
 | control | 4 of 10 (ServoState, ServoCommand, JointCommandSequence, JointCommandStep) |
 | manipulation | 5 of 6 |
-| compare | 4 of 10 (Comparison, ErrorStats, Outcome, Violation; the rest is traj_compare's) |
+| compare | 9 of 15 (Comparison of every stream, ErrorStats, Outcome, Violation, and the sim-to-real nouns Recording, Run, Dataset, RunComparison, DatasetComparison; the rest is traj_compare's) |
 
 Use-case dashboards (object detection, grasping, trajectory generation, …) come from plugins such as the sibling
 package [robot_dashboards](https://github.com/zacharyyamaoka/robot_dashboards) (public, with its own landing page at

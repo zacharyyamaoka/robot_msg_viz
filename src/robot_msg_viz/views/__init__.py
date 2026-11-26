@@ -5,9 +5,11 @@ from robot_msg_viz.views import (  # noqa: F401  (each module registers its Type
     control,
     geometry,
     manipulation,
+    runs,
     sensor,
     shape,
     std,
+    streams,
     trajectory,
     vision,
 )
