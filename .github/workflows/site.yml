@@ -9,11 +9,9 @@
 #   stills and ~12 s hero are committed in ITS repo (website/media/shots), so CI clones it at the pinned commit and
 #   merges its stills into the shots folder; this repo still commits type stills only (tests/test_site_public.py).
 #   The check step below still greps the result for local paths and e-mail addresses.
-# WHY --no-sources and robot_msgs from its GitHub commit: pyproject's [tool.uv.sources] points at /home/bam checkouts
+# WHY --no-sources (robot-msgs>=0.3.2 comes from PyPI): pyproject's [tool.uv.sources] points at /home/bam checkouts
 #   and its default "site" group pulls robot-dashboards from a checkout; neither exists on a runner. `uv pip install` reads
-#   no dependency groups. robot-msgs 0.3.1 is not on PyPI yet and the stock JointTrajectory view needs its
-#   log_joint_tabs (e5f375d); pinned to a commit so a robot_msgs push cannot change this run. Back to PyPI once a
-#   robot-msgs release has it.
+#   no dependency groups. The stock JointTrajectory view needs robot-msgs' log_joint_tabs (in 0.3.2).
 name: site
 on:
   push:
@@ -32,7 +30,7 @@ jobs:
       - run: uv venv --python 3.12
       - run: >-
           uv pip install --no-sources -e ".[test]"
-          "robot-msgs[rerun] @ git+https://github.com/zacharyyamaoka/robot_msgs@e5f375dd98e3b3cd3066f284c91db9ef63ea48a7"
+          "robot-msgs[rerun]>=0.3.2"
           "robot-dashboards @ git+https://github.com/zacharyyamaoka/robot_dashboards@8e3a0f2"
       - name: stills for the use cases
         run: |
